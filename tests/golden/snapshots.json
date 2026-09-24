@@ -1,0 +1,267 @@
+{
+  "analysis.method.nw_hfc": {
+    "max": 11,
+    "min": 0,
+    "shape": [
+      7
+    ],
+    "sum": 11
+  },
+  "analysis.method.pca_80": {
+    "value": 4
+  },
+  "analysis.method.pca_elbow": {
+    "value": 3
+  },
+  "analysis.nmf.abundance_maps": {
+    "max": 1.689856,
+    "min": 0.0,
+    "shape": [
+      3,
+      4,
+      4
+    ],
+    "sum": 23.244351
+  },
+  "analysis.nmf.phase_spectra": {
+    "max": 0.817932,
+    "min": 0.002125,
+    "shape": [
+      3,
+      1001
+    ],
+    "sum": 199.862981
+  },
+  "analysis.phase_estimate.confidence": {
+    "value": "low"
+  },
+  "analysis.phase_estimate.predicted_n": {
+    "value": 4
+  },
+  "analysis.rejected_estimate.confidence": {
+    "value": "moderate"
+  },
+  "analysis.rejected_estimate.predicted_n": {
+    "value": 3
+  },
+  "analysis.threshold.above_ten": {
+    "value": 3
+  },
+  "analysis.threshold.at_ten": {
+    "value": 10
+  },
+  "data.crop.full.auc_cube": {
+    "max": 108.450876,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      1001
+    ],
+    "sum": 654152.260676
+  },
+  "data.crop.full.cropped_axis": {
+    "max": 1200.0,
+    "min": 200.0,
+    "shape": [
+      1001
+    ],
+    "sum": 700700.0
+  },
+  "data.crop.window.auc_cube": {
+    "max": 61.196895,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      501
+    ],
+    "sum": 197146.961042
+  },
+  "data.crop.window.cropped_axis": {
+    "max": 900.0,
+    "min": 400.0,
+    "shape": [
+      501
+    ],
+    "sum": 325650.0
+  },
+  "data.cumulative.p0.auc_cube": {
+    "max": 108.450876,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      1001
+    ],
+    "sum": 654152.260676
+  },
+  "data.cumulative.p0.cropped_axis": {
+    "max": 1200.0,
+    "min": 200.0,
+    "shape": [
+      1001
+    ],
+    "sum": 700700.0
+  },
+  "data.cumulative.p0.pixel_map": {
+    "max": 16,
+    "min": 1,
+    "shape": [
+      4,
+      4
+    ],
+    "sum": 136
+  },
+  "data.cumulative.p0.spectra_list": {
+    "max": 1.017849,
+    "min": 0.0,
+    "shape": [
+      17,
+      1001
+    ],
+    "sum": 1342.596753
+  },
+  "data.cumulative.p1.auc_cube": {
+    "max": 1.002003,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      1001
+    ],
+    "sum": 8413.202009
+  },
+  "data.cumulative.p1.cropped_axis": {
+    "max": 1200.0,
+    "min": 200.0,
+    "shape": [
+      1001
+    ],
+    "sum": 700700.0
+  },
+  "data.cumulative.p1.pixel_map": {
+    "max": 16,
+    "min": 1,
+    "shape": [
+      4,
+      4
+    ],
+    "sum": 136
+  },
+  "data.cumulative.p1.spectra_list": {
+    "max": 0.016551,
+    "min": -0.000199,
+    "shape": [
+      17,
+      1001
+    ],
+    "sum": 16.002053
+  },
+  "data.raw_cube.default": {
+    "max": 1.017849,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      1001
+    ],
+    "sum": 1342.596753
+  },
+  "data.raw_cube.intensities": {
+    "max": 1.017849,
+    "min": 0.0,
+    "shape": [
+      4,
+      4,
+      1001
+    ],
+    "sum": 1342.596753
+  },
+  "data.raw_cube.shape": {
+    "max": 1001,
+    "min": 4,
+    "shape": [
+      3
+    ],
+    "sum": 1009
+  },
+  "data.raw_cube.spectral_axis": {
+    "max": 1200.0,
+    "min": 200.0,
+    "shape": [
+      1001
+    ],
+    "sum": 700700.0
+  },
+  "grid.pixel_map": {
+    "max": 16,
+    "min": 1,
+    "shape": [
+      4,
+      4
+    ],
+    "sum": 136
+  },
+  "grid.sorted_file_count": {
+    "value": 16
+  },
+  "grid.traversal_route": {
+    "max": 3,
+    "min": 0,
+    "shape": [
+      16,
+      2
+    ],
+    "sum": 48
+  },
+  "notebooks.helper_exists": {
+    "value": true
+  },
+  "notebooks.helper_line_count": {
+    "value": 407
+  },
+  "notebooks.import_styles": {
+    "items": {
+      "cluster.py": {
+        "value": "from notebooks.raman_helper import *"
+      },
+      "examples.py": {
+        "value": "from raman_helper import *"
+      },
+      "plot_pixel.py": {
+        "value": "from notebooks.raman_helper import *"
+      },
+      "test.py": {
+        "value": "from notebooks.raman_helper import *"
+      },
+      "test_nn.py": {
+        "value": "from notebooks.raman_helper import *"
+      },
+      "unmix.py": {
+        "value": "from notebooks.raman_helper import *"
+      }
+    }
+  },
+  "notebooks.names_used_but_never_assigned": {
+    "shape": [
+      14
+    ],
+    "values": [
+      "Path",
+      "convolve",
+      "kernel",
+      "np",
+      "pd",
+      "re",
+      "regions",
+      "rolling_window",
+      "rp",
+      "self",
+      "spectra_end",
+      "spectra_start",
+      "x",
+      "y"
+    ]
+  }
+}

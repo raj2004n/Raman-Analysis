@@ -1,0 +1,78 @@
+"""Golden snapshots for the data layer: ``src/data/grid.py`` and ``src/data/loader.py``.
+
+These pin the numbers the loaders produce today, so a later change to file
+discovery, traversal order, or the shape of what a load returns can be shown to
+have preserved them. The fixture is 4x4 with three phases laid out by
+``(row + col) % 3``, which makes the traversal order a meaningful claim rather
+than a coincidence.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from src.data.grid import RamanGrid
+from src.data.loader import get_cumulative_hsi_cube, get_raw_hsi_cube
+from tests import synthetic
+
+# Pipeline 0 is raw data; pipeline 1 is the first preprocessing protocol. The other
+# two protocols are exercised the same way but add runtime without adding coverage
+# of anything the first two do not already touch.
+PIPELINES_SNAPSHOTTED = (0, 1)
+
+
+def test_traversal_follows_the_documented_route(grid_dir, golden):
+    """``RamanGrid.traverse`` walks the bottom row, steps up, and walks back."""
+    grid = RamanGrid(grid_dir, synthetic.ROWS, synthetic.COLS)
+    route = [(row, col) for _, row, col in grid.traverse()]
+
+    golden.check("grid.traversal_route", np.array(route))
+    golden.check("grid.sorted_file_count", len(grid.get_sorted_files()))
+
+    _, _, _, pixel_map = get_cumulative_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS, 0)
+    golden.check("grid.pixel_map", pixel_map)
+
+    assert np.array_equal(pixel_map, synthetic.expected_pixel_map()), (
+        "traversal no longer matches the boustrophedon route the loaders assume: "
+        f"got {pixel_map.tolist()}, expected {synthetic.expected_pixel_map().tolist()}"
+    )
+
+
+def test_raw_cube_shape_and_axis(grid_dir, golden, raw_cube):
+    golden.check("data.raw_cube.shape", np.array(raw_cube.spectral_data.shape))
+    golden.check("data.raw_cube.spectral_axis", np.asarray(raw_cube.spectral_axis))
+    golden.check("data.raw_cube.intensities", np.asarray(raw_cube.spectral_data))
+
+    assert raw_cube.spectral_data.shape == (
+        synthetic.ROWS,
+        synthetic.COLS,
+        synthetic.spectral_axis().size,
+    )
+
+
+def test_cumulative_cube_snapshots(grid_dir, golden):
+    """The four values ``get_cumulative_hsi_cube`` returns, per pipeline."""
+    for pipeline_id in PIPELINES_SNAPSHOTTED:
+        auc_cube, spectra_list, cropped_axis, pixel_map = get_cumulative_hsi_cube(
+            grid_dir, synthetic.ROWS, synthetic.COLS, pipeline_id
+        )
+        prefix = f"data.cumulative.p{pipeline_id}"
+        golden.check(f"{prefix}.auc_cube", auc_cube)
+        golden.check(f"{prefix}.spectra_list", spectra_list)
+        golden.check(f"{prefix}.cropped_axis", cropped_axis)
+        golden.check(f"{prefix}.pixel_map", pixel_map)
+
+
+def test_cropping_narrows_the_axis(grid_dir, golden):
+    """A cropped run must land on the same axis positions as an uncropped one."""
+    for label, start, end in (("full", None, None), ("window", 400.0, 900.0)):
+        auc_cube, _, cropped_axis, _ = get_cumulative_hsi_cube(
+            grid_dir, synthetic.ROWS, synthetic.COLS, 0, start, end
+        )
+        golden.check(f"data.crop.{label}.cropped_axis", cropped_axis)
+        golden.check(f"data.crop.{label}.auc_cube", auc_cube)
+
+
+def test_raw_cube_matches_the_snapshot(grid_dir, golden):
+    cube = get_raw_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS)
+    golden.check("data.raw_cube.default", np.asarray(cube.spectral_data))
