@@ -1,4 +1,5 @@
-"""The phase decomposition viewer's two jobs: forward its settings, and know what "estimate it" means.
+"""The phase decomposition viewer's three jobs: forward its settings, know what "estimate it"
+means, and stop when there is no count to decompose with.
 
 The settings used to be an inline dictionary in the viewer, which meant a caller could
 not choose a solver, an iteration cap or a seed, and could not see what a run had used.
@@ -14,6 +15,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from src.analysis.phase_number_est import MethodEstimate, PhaseEstimate
 from src.config import NmfConfig
 from src.visualisation import view_phase_decomp
 
@@ -52,7 +54,7 @@ def viewer(monkeypatch):
     monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", lambda *a, **k: _Lines(recorded.get("n_components", 1)))
     monkeypatch.setattr(view_phase_decomp.rp.plot, "image", lambda *a, **k: None)
     monkeypatch.setattr(view_phase_decomp.plt, "show", lambda: None)
-    monkeypatch.setattr(view_phase_decomp, "estimate_phase_number", lambda cube: (3, "high"))
+    monkeypatch.setattr(view_phase_decomp, "estimate_phase_number", lambda cube: PhaseEstimate(3, "high", ()))
     return recorded
 
 
@@ -99,3 +101,24 @@ def test_a_given_count_is_never_estimated(raw_cube, viewer, monkeypatch):
     view_phase_decomp.show_spectra_ext_viewer(raw_cube, 4)
 
     assert viewer["n_components"] == 4
+
+
+def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewer, monkeypatch, capsys):
+    """No count means no unmixing, and saying so is the whole result.
+
+    The estimator reports what each method found, so the user has already been told
+    why there is no answer. Decomposing anyway would need a count, and the only counts
+    available are the estimates the bounds already threw away.
+    """
+    monkeypatch.setattr(
+        view_phase_decomp, "estimate_phase_number",
+        lambda cube: PhaseEstimate(
+            None, "undetermined",
+            (MethodEstimate("PCA 80%", None, "the estimate of 17 is above the limit of 10"),),
+        ),
+    )
+
+    view_phase_decomp.show_spectra_ext_viewer(raw_cube, None)
+
+    assert viewer == {}, "the decomposition was built without a count to give it"
+    assert "Nothing to unmix" in capsys.readouterr().out

@@ -2,17 +2,24 @@
 
 The three modes are thin, but they are where the loaders and the viewers meet, and the
 heatmap mode is where the four values of a cube used to be spread across an unpacking
-statement. These tests replace ``prompt_args`` so no input is read, and replace the
-viewers so no window opens, which leaves the wiring itself as the thing under test.
+statement. Most of these tests replace ``prompt_args`` so no input is read, and replace
+the viewers so no window opens, which leaves the wiring itself as the thing under test.
+The last two let the prompt loop read real piped input instead, since the parsing is
+only covered by exercising it.
 """
 
 from __future__ import annotations
+
+import io
 
 import numpy as np
 import pytest
 
 from scripts import plot_raman
+from src.analysis.phase_number_est import PhaseEstimate
 from src.data.loader import Cube
+from src.visualisation import view_heatmap, view_phase_decomp
+from tests import synthetic
 
 
 @pytest.fixture
@@ -97,3 +104,55 @@ def test_the_predict_mode_passes_the_run_and_the_threshold_as_keywords(prompted,
     assert kind == "predict"
     assert args == ("/runs/sample", "~/data", 2, 3)
     assert kwargs == {"confidence_threshold": 0.5, "save_path": None}
+
+
+# --------------------------------------------------------------------------------------
+# Whole modes, with the answers piped in rather than the prompts replaced. Everything
+# below the prompt is the real thing: the loader, the cube it builds, and the viewer.
+# --------------------------------------------------------------------------------------
+
+
+def _piped(*lines):
+    """The answers a user would type, one per prompt, as the prompt loop would read them."""
+    return io.StringIO("".join(f"{line}\n" for line in lines))
+
+
+def test_the_heatmap_mode_runs_end_to_end_from_piped_answers(grid_dir, monkeypatch):
+    """Mode 1 through the prompts, with the figure built from the cube the loader returned."""
+    monkeypatch.setattr(view_heatmap.plt, "show", lambda: None)
+    monkeypatch.setattr("sys.stdin", _piped(
+        f"{grid_dir} {synthetic.ROWS} {synthetic.COLS}", 1, 1, 400.0, 900.0
+    ))
+
+    plot_raman.main()
+
+    figure = view_heatmap.plt.gcf()
+    assert len(figure.axes) >= 4, "the image, the two spectrum panels and the sliders"
+    view_heatmap.plt.close(figure)
+
+
+def test_an_undetermined_estimate_reaches_the_user_from_piped_answers(grid_dir, monkeypatch, capsys):
+    """Mode 2 at ``-1`` when the estimate has no count, all the way from the prompts.
+
+    The estimator is the one thing replaced, with the answer the rule gives when
+    nothing survives, since a fixture that happens to be undetermined is not something
+    to rely on. The prompts, the loader and the viewer are the real ones, and the
+    decomposition is booby-trapped: the path being checked is the one that stops before
+    it, and it stops whatever count it would have been given.
+    """
+
+    def no_unmixing(**kwargs):
+        raise AssertionError(f"the decomposition was built with {kwargs}")
+
+    monkeypatch.setattr(
+        view_phase_decomp, "estimate_phase_number",
+        lambda cube: PhaseEstimate(None, "undetermined", ()),
+    )
+    monkeypatch.setattr(view_phase_decomp.rp.analysis.decompose, "NMF", no_unmixing)
+    monkeypatch.setattr("sys.stdin", _piped(
+        f"{grid_dir} {synthetic.ROWS} {synthetic.COLS}", 2, -1, "", ""
+    ))
+
+    plot_raman.main()
+
+    assert "Nothing to unmix without a phase count." in capsys.readouterr().out

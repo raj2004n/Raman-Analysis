@@ -14,7 +14,9 @@ def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, n
         hsi_cube: The cube to decompose.
         n_components: How many phases to look for, or None to estimate it from the
             cube. -1 is accepted as the same thing, since that is the value the
-            command line prompt has always offered for "estimate it".
+            command line prompt has always offered for "estimate it". When the
+            estimate comes back undetermined there is no count to decompose with, so
+            the estimator's report is the whole result and nothing is unmixed.
         start, end: Wavenumber bounds to crop to before unmixing. Either may be None.
         nmf_config (NmfConfig, optional): The decomposition settings. Defaults to
             NmfConfig(), whose values are the ones this viewer used to inline.
@@ -30,8 +32,12 @@ def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, n
 
     # estimate number of phases if requested
     if n_components is None:
-        n_components, confidence = estimate_phase_number(hsi_cube)
-        print(f"Estimated {n_components} phases with {confidence} confidence.")
+        estimate = estimate_phase_number(hsi_cube)
+        if estimate.n is None:
+            print("Nothing to unmix without a phase count.")
+            return
+        n_components = estimate.n
+        print(f"Estimated {n_components} phases with {estimate.confidence} confidence.")
 
     if nmf_config is None:
         nmf_config = NmfConfig()

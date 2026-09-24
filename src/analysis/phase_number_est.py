@@ -1,9 +1,60 @@
 import kneed
 import numpy as np
 import ramanspy as rp
+from dataclasses import dataclass
 from pysptools import material_count
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+
+from src.config import EstimatorConfig
+
+
+@dataclass(frozen=True)
+class MethodEstimate:
+    """What one method found, or why it contributes no number.
+
+    A method ends up with nothing to contribute in two ways: it produced no estimate
+    at all, or it produced one and a bound threw it away. Both are recorded the same
+    way, an empty value with the reason beside it, because from the vote's point of
+    view they are the same thing. A rejection used to be written over with a 1 that
+    then voted with the real answers, which made a discarded guess indistinguishable
+    from a method that had genuinely counted one phase.
+
+    Attributes:
+        name: The method, as it is reported to the user.
+        value: The number of phases this method suggests, or None.
+        rejected: Why this estimate does not vote, or None when it does. A method
+            that produced nothing carries its reason here too.
+    """
+
+    name: str
+    value: int | None = None
+    rejected: str | None = None
+
+    @property
+    def votes(self) -> bool:
+        """Whether this estimate is one of the numbers the answer is decided from."""
+        return self.value is not None and self.rejected is None
+
+
+@dataclass(frozen=True)
+class PhaseEstimate:
+    """The phase count, the confidence in it, and what every method reported.
+
+    Attributes:
+        n: How many phases, or None when too few methods produced an estimate for
+            there to be an answer.
+        confidence: 'high', 'moderate' or 'low' when there is a count, and
+            'undetermined' when there is not.
+        votes: Every method's report, in the order the methods ran, the rejections
+            and their reasons included, so a caller can show what was discarded and
+            why rather than only the number that survived.
+    """
+
+    n: int | None
+    confidence: str
+    votes: tuple[MethodEstimate, ...]
+
 
 def _n_by_pca(hsi_cube):
     # get matrix containing spectral data
@@ -78,7 +129,122 @@ def _determine_confidence(ns):
     return 'low'
 
 
-def estimate_phase_number(hsi_cube):
+def _check_bound(name, value, cfg):
+    """The estimate as a vote, or a rejection saying which bound it broke.
+
+    A method that returned nothing is rejected here as well: there is no number to
+    count, which is the same situation as a number that was thrown away, and the
+    reason records which of the two happened.
+    """
+    if value is None:
+        return MethodEstimate(name, None, "the method produced no estimate")
+
+    value = int(value)
+    if value > cfg.reject_above:
+        return MethodEstimate(
+            name, None,
+            f"the estimate of {value} is above the limit of {cfg.reject_above}",
+        )
+    return MethodEstimate(name, value)
+
+
+def _consistent_with_pca(name, ns_hfc, surviving_pca, cfg):
+    """The NW-HFC estimate nearest what the surviving PCA estimates agree on.
+
+    HFC-VD reports one count per false alarm rate, so there are seven candidates and
+    the one nearest the PCA estimates is taken as this method's answer. That answer
+    only votes if it is close to the largest PCA estimate, which is what keeps a
+    method that disagrees with the others from deciding the result. With no PCA
+    estimate surviving there is nothing to agree with and the check cannot be made,
+    so this abstains rather than counting as agreement.
+    """
+    if not surviving_pca:
+        return MethodEstimate(name, None, "there was no PCA estimate to compare against")
+
+    values = [estimate.value for estimate in surviving_pca]
+    target = float(np.mean(values))
+    value = int(ns_hfc[np.abs(np.asarray(ns_hfc) - target).argmin()])
+
+    largest = max(values)
+    gap = abs(value - largest)
+    if gap < cfg.hfc_tolerance:
+        return MethodEstimate(name, value)
+    return MethodEstimate(
+        name, None,
+        f"the nearest estimate of {value} is {gap} from the largest PCA estimate of "
+        f"{largest}, beyond the tolerance of {cfg.hfc_tolerance}",
+    )
+
+
+def combine(votes, cfg):
+    """The phase count the estimates agree on, or None when they do not agree enough.
+
+    A rejected estimate is not a number this rule can use, so the answer is the
+    largest estimate that survived. Fewer than ``cfg.min_votes`` survivors is not a
+    count with weak support, it is no count: reporting the largest of one or two
+    numbers is how a run ends up naming a phase count that nothing in the data
+    supports.
+
+    Args:
+        votes: One ``MethodEstimate`` per method, in the order the methods ran.
+        cfg (EstimatorConfig): The bounds the rule is applied with.
+
+    Returns:
+        PhaseEstimate: the count, its confidence, and the reports it was decided from.
+    """
+    survivors = [estimate for estimate in votes if estimate.votes]
+    if len(survivors) < cfg.min_votes:
+        return PhaseEstimate(None, "undetermined", tuple(votes))
+
+    values = [estimate.value for estimate in survivors]
+    return PhaseEstimate(max(values), _determine_confidence(values), tuple(votes))
+
+
+def _report(estimate, cfg):
+    """Prints what each method reported and what was decided from it."""
+    print("-----------------------------")
+    print("Final estimates of number of distinct spectra:")
+    for vote in estimate.votes:
+        if vote.votes:
+            print(f"{vote.name}: {vote.value}")
+        else:
+            print(f"{vote.name}: no vote, {vote.rejected}")
+    print("-----------------------------")
+
+    if estimate.n is None:
+        survivors = sum(1 for vote in estimate.votes if vote.votes)
+        print(
+            f"Best estimate of number of distinct spectra is undetermined: "
+            f"{survivors} of {len(estimate.votes)} methods gave an estimate, fewer "
+            f"than the {cfg.min_votes} needed to decide"
+        )
+    else:
+        print(
+            f"Best estimate of number of distinct spectra is {estimate.n} "
+            f"with {estimate.confidence} confidence"
+        )
+
+
+def estimate_phase_number(hsi_cube, cfg=None):
+    """Estimates how many distinct spectra the cube holds, and how far to trust that.
+
+    Three methods estimate the count and are combined by ``combine``. Each one
+    reports rather than votes silently, so a method that was rejected or found
+    nothing at all is visible in the result instead of being replaced by a number
+    that then counted.
+
+    Args:
+        hsi_cube: The cube to estimate from.
+        cfg (EstimatorConfig, optional): The bounds to apply. Defaults to
+            EstimatorConfig(), whose values are the ones this rule used to spell out
+            in its own body.
+
+    Returns:
+        PhaseEstimate: the count, which is None when the methods did not agree on
+        one, the confidence, and every method's report.
+    """
+    if cfg is None:
+        cfg = EstimatorConfig()
 
     pipeline_pca = rp.preprocessing.Pipeline([
     rp.preprocessing.despike.WhitakerHayes(),
@@ -92,56 +258,28 @@ def estimate_phase_number(hsi_cube):
 
     hsi_cube_pca = pipeline_pca.apply(hsi_cube)
     hsi_cube_hfc = pipeline_hfc.apply(hsi_cube)
-    
+
     n_80, n_elbow = _n_by_pca(hsi_cube_pca)
     ns_hfc        = _n_by_hfc(hsi_cube_hfc)
 
-    # catch any assumptions that are too high
     print("-----------------------------")
     print(f"PCA 80% estimate: {n_80}")
-    if n_80 > 10:
-        n_80 = 1
-        print(f"Rejected PCA 80% estimate.")
-        print(f"Reason: Estimate was too high (>10).")
-
     print("-----------------------------")
-    print(f"PCA Elbow estimate: {n_elbow}")
+    print(f"PCA elbow estimate: {n_elbow}")
     if n_elbow is None:
-        print("No elbow found in the PCA variance curve, so no estimate from this method.")
-    elif n_elbow > 10:
-        n_elbow = 1
-        print(f"Rejected PCA elbow estimate.")
-        print(f"Reason: Estimate was too high (>10).")
-
+        print("No knee in the PC variance curve, so this method has nothing to report.")
     print("-----------------------------")
     print(f"NW-HFC estimates: {ns_hfc}")
-    # pick ns_hfc which is closest to mean pca
-    # A method that found nothing is left out of the vote entirely. Note that a
-    # rejected estimate is not: it has already been replaced by 1 above and votes.
-    ns = np.array([n for n in (n_80, n_elbow) if n is not None])
-    mean_pca = ns.mean()
-    idx = np.abs(ns_hfc - mean_pca).argmin()
-    n_hfc = ns_hfc[idx]
 
-    # add n_vd to consideration if it is not too far from max
-    if abs(n_hfc - np.max(ns)) < 2:
-        ns = np.append(ns, n_hfc)
-    else:
-        ns = np.append(ns, 1)
-        print("Rejected predictions from NW-HFC.")
-        print("Reason: Estimates are too far from PCA predictions.")
-    
+    # the two PCA estimates are checked against the bound first, since the NW-HFC
+    # check compares against the PCA estimates that survived it
+    pca_votes = [
+        _check_bound("PCA 80%", n_80, cfg),
+        _check_bound("PCA elbow", n_elbow, cfg),
+    ]
+    surviving_pca = [estimate for estimate in pca_votes if estimate.votes]
+    hfc_vote = _consistent_with_pca("NW-HFC", ns_hfc, surviving_pca, cfg)
 
-    predicted_n = np.max(ns)
-    confidence = _determine_confidence(ns)
-
-    print("-----------------------------")
-    print(f"Final estimates of number of distinct spectra:")
-    print(f"PCA 80%: {n_80}")
-    print(f"PCA Elbow: {n_elbow if n_elbow is not None else 'no estimate'}")
-    print(f"NWHFC: {ns_hfc}")
-    print("-----------------------------")
-    
-    print(f"Best estimate of number of distinct spectra is {predicted_n} with {confidence} confidence")
-
-    return predicted_n, confidence
+    estimate = combine([*pca_votes, hfc_vote], cfg)
+    _report(estimate, cfg)
+    return estimate

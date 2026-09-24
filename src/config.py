@@ -42,6 +42,31 @@ class NmfConfig:
 
 
 @dataclass(frozen=True)
+class EstimatorConfig:
+    """The bounds that decide whether a phase-count estimate is usable.
+
+    These were literals inside the combination rule, which meant the rule could not
+    be read in one place and a caller could not loosen or tighten it. Each bound is
+    exclusive at its own limit, so the value named here is still kept.
+
+    Attributes:
+        reject_above: An estimate larger than this is rejected. On a real cube the
+            PCA methods can return a count in the tens, which no sample of this kind
+            has, so anything past this is treated as a failure of the method rather
+            than as an answer.
+        min_votes: How many estimates have to survive before a count is named at all.
+            Below this the result is undetermined, because the largest of one or two
+            numbers is not something to decompose a cube on.
+        hfc_tolerance: How close the NW-HFC estimate has to be to the largest PCA
+            estimate to count as agreeing with it.
+    """
+
+    reject_above: int = 10
+    min_votes: int = 2
+    hfc_tolerance: int = 2
+
+
+@dataclass(frozen=True)
 class CnnConfig:
     """The shape and the optimiser of the convolutional model.
 
