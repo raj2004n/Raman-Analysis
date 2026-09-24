@@ -10,6 +10,7 @@ than a coincidence.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from src.data.grid import RamanGrid
 from src.data.loader import get_cumulative_hsi_cube, get_raw_hsi_cube
@@ -76,3 +77,68 @@ def test_cropping_narrows_the_axis(grid_dir, golden):
 def test_raw_cube_matches_the_snapshot(grid_dir, golden):
     cube = get_raw_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS)
     golden.check("data.raw_cube.default", np.asarray(cube.spectral_data))
+
+
+# --------------------------------------------------------------------------------------
+# File discovery. A data directory is written by an instrument, so it can pick up a notes
+# file or lose a spectrum, and neither should end in a stack trace from the sort call.
+# --------------------------------------------------------------------------------------
+
+
+def test_an_unnumbered_file_is_ignored(tmp_path):
+    """A stray .txt next to a complete grid is skipped, not fatal.
+
+    Sorting the files by pixel number used to compare None with int and raise TypeError
+    as soon as one filename had no [n] in it, which made a notes file in the sample
+    directory break every mode.
+    """
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    (directory / "readme_backup.txt").write_text("notes about this sample\n")
+
+    files = RamanGrid(directory, 2, 2).get_sorted_files()
+
+    assert len(files) == 4
+    assert "readme_backup.txt" not in [file.name for file in files]
+
+
+def test_an_unnumbered_file_is_named_when_the_grid_is_incomplete(tmp_path):
+    """The stray file is reported, since it may be the spectrum that is missing."""
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    (directory / "FullGrid[4](-18004, -324, -14679).txt").unlink()
+    (directory / "readme_backup.txt").write_text("notes about this sample\n")
+
+    with pytest.raises(ValueError) as raised:
+        RamanGrid(directory, 2, 2).get_sorted_files()
+
+    message = str(raised.value)
+    assert "readme_backup.txt" in message
+    assert "found 3" in message
+
+
+def test_a_gap_in_the_pixel_numbers_is_an_error(tmp_path):
+    """Numbers 1, 2, 4 cannot be laid out on a 2x2 grid, so this stops rather than guesses."""
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    (directory / "FullGrid[3](-18003, -323, -14678).txt").unlink()
+
+    with pytest.raises(ValueError, match="Pixel numbers with no file"):
+        RamanGrid(directory, 2, 2).get_sorted_files()
+
+
+def test_a_repeated_pixel_number_is_an_error(tmp_path):
+    """Two files claiming pixel 3 would shift every pixel after them by one position."""
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    source = directory / "FullGrid[3](-18003, -323, -14678).txt"
+    (directory / "FullGrid[3](-18009, -329, -14684).txt").write_text(source.read_text())
+
+    with pytest.raises(ValueError, match="more than one file"):
+        RamanGrid(directory, 2, 2).get_sorted_files()
+
+
+def test_a_directory_with_no_numbered_files_says_so(tmp_path):
+    """Only unnumbered files present: the error names them instead of the sort failing."""
+    directory = tmp_path / "grid"
+    directory.mkdir()
+    (directory / "readme_backup.txt").write_text("notes about this sample\n")
+
+    with pytest.raises(FileNotFoundError, match="readme_backup.txt"):
+        RamanGrid(directory, 2, 2).get_sorted_files()

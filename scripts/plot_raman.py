@@ -2,6 +2,7 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from src.data.loader import *
+from src.data.grid import RamanGrid
 from src.visualisation.view_heatmap import show_hsi_viewer
 from src.visualisation.view_phase_decomp import show_spectra_ext_viewer
 from src.visualisation.view_predict import show_prediction_map
@@ -98,19 +99,16 @@ def prompt_args():
             print("Please check the path and try again.")
             continue
 
-        txt_files = [f for f in os.listdir(path) if f.endswith(".txt")]
-        if not txt_files:
-            print(f"No .txt files found in: {path}")
-            print("Please check the path and try again.")
+        # The grid owns file discovery, so the CLI counts exactly what the loaders
+        # will read: numbered files only, and exactly rows x cols of them.
+        try:
+            files = RamanGrid(path, x, y).get_sorted_files()
+        except (FileNotFoundError, ValueError) as exc:
+            print(exc)
+            print("Please check the path and the dimensions and try again.")
             continue
 
-        n_files = len(txt_files)
-        if x * y != n_files:
-            print(f"Grid dimensions {x}x{y}={x*y} do not match the {n_files} .txt files found in: {path}")
-            print("Please check the dimensions and try again.")
-            continue
-
-        print(f"Found {n_files} .txt file(s) in {path}.")
+        print(f"Found {len(files)} numbered .txt file(s) in {path}.")
         break
 
     mode = prompt_mode()
