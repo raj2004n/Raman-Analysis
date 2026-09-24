@@ -39,3 +39,51 @@ class NmfConfig:
         """The keyword arguments for ``ramanspy``'s ``NMF``, component count included."""
         settings = {field.name: getattr(self, field.name) for field in fields(self)}
         return {"n_components": n_components, **settings}
+
+
+@dataclass(frozen=True)
+class CnnConfig:
+    """The shape and the optimiser of the convolutional model.
+
+    The defaults are the architecture that was hardcoded in ``CNN_Model``: three
+    convolutional blocks with filters of 16, 32 and 64 and kernels of 21, 11 and 5,
+    then a 2048-unit dense layer. Changing them here changes the model, which is the
+    point of the config existing, but any change to the defaults changes the
+    parameter count and so the model that a training run produces.
+
+    ``initializer_variance`` is a variance, and the initialiser is built with its
+    square root as the standard deviation.
+    """
+
+    conv_filters: tuple[int, ...] = (16, 32, 64)
+    conv_kernel_sizes: tuple[int, ...] = (21, 11, 5)
+    pool_size: int = 2
+    dense_units: int = 2048
+    dropout: float = 0.5
+    initializer_variance: float = 0.05
+    learning_rate: float = 0.001
+    beta_1: float = 0.9
+    beta_2: float = 0.999
+    epsilon: float = 1e-08
+
+
+@dataclass(frozen=True)
+class TrainConfig:
+    """What one training run needs, and nothing about where the process was started.
+
+    The dataset and the wavenumber range used to be literals in the middle of the
+    training script, so a second dataset meant editing the script. They are fields
+    now, and the command line reads its defaults from them, so the two cannot drift
+    apart: ``--input-size`` with no argument offers ``input_size``.
+    """
+
+    dataset: str = "~/Code/Data_SH/poor_unoriented"
+    input_size: int = 2000
+    x_min: float = 313.3
+    x_max: float = 1028.4
+    epochs: int = 500
+    patience: int = 20
+    n_shift: int = 1
+    n_noise: int = 1
+    name: str | None = None
+
