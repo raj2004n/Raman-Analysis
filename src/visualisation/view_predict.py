@@ -5,6 +5,46 @@ from matplotlib.patches import Patch
 from matplotlib.colors import ListedColormap
 from .theme import apply_theme, BG, FG, GRID, ACCENT
 
+def _hover_annotation(row, col, masked_labels, confidence_map, predicted_top5_map,
+                      confidence_threshold):
+    """What to show for the pixel under the pointer.
+
+    Args:
+        row (int): Row index, already rounded from the pointer position.
+        col (int): Column index, already rounded from the pointer position.
+        masked_labels (np.ndarray): Predicted mineral per pixel, 'Unknown' where the
+            prediction fell below the confidence threshold.
+        confidence_map (np.ndarray): Top-1 probability per pixel.
+        predicted_top5_map (np.ndarray): The five most likely minerals per pixel.
+        confidence_threshold (float): Below this, a pixel reads as 'Unknown'.
+
+    Returns:
+        tuple[list[str], str] | None: The lines to display and the mineral the pixel
+            resolved to, or None when ``(row, col)`` is not a pixel of the map.
+
+    Rounding the pointer position lands exactly on ``width`` or ``length`` when it sits
+    on the far edge, so the bounds test has to come before any indexing. Kept apart
+    from the matplotlib callback so that rule can be tested without a figure window.
+    """
+    length, width = masked_labels.shape
+    if not (0 <= row < length and 0 <= col < width):
+        return None
+
+    confidence = confidence_map[row, col]
+    if confidence < confidence_threshold:
+        lines = [
+            f"Pixel ({row}, {col})",
+            "",
+            "Unknown",
+            f"Confidence: {confidence*100:.1f}% (below threshold)",
+        ]
+    else:
+        lines = [f"Pixel ({row}, {col})", ""]
+        for rank, (label, prob) in enumerate(predicted_top5_map[row, col][:5], 1):
+            lines.append(f"{rank}. {label}: {prob*100:.1f}%")
+    return lines, masked_labels[row, col]
+
+
 def show_prediction_map(path, x, y, confidence_threshold=0.80, save_path=None):
     apply_theme()
     
@@ -68,27 +108,22 @@ def show_prediction_map(path, x, y, confidence_threshold=0.80, save_path=None):
     annot.set_visible(False)
 
     def on_hover(event):
-        if event.inaxes == ax:
-            col = int(round(event.xdata))
+        if event.inaxes == ax and event.xdata is not None and event.ydata is not None:
             row = int(round(event.ydata))
-            mineral = masked_labels[row, col]
-            mineral_color = colors[mineral_to_int[mineral]]
-            if 0 <= row < length and 0 <= col < width:
-                conf = confidence_map[row, col]
-                if conf < confidence_threshold:
-                    lines = [f"Pixel ({row}, {col})", "", "Unknown", f"Confidence: {conf*100:.1f}% (below threshold)"]
-                else:
-                    top5 = predicted_top5_map[row, col]
-                    lines = [f"Pixel ({row}, {col})", ""]
-                    for rank, (label, prob) in enumerate(top5[:5], 1):
-                        lines.append(f"{rank}. {label}: {prob*100:.1f}%")
+            col = int(round(event.xdata))
+            annotation = _hover_annotation(
+                row, col, masked_labels, confidence_map, predicted_top5_map,
+                confidence_threshold,
+            )
+            if annotation is None:
+                annot.set_visible(False)
+            else:
+                lines, mineral = annotation
                 annot.xy = (event.xdata, event.ydata)
                 annot.set_text("\n".join(lines))
-                annot.get_bbox_patch().set_facecolor(mineral_color)
+                annot.get_bbox_patch().set_facecolor(colors[mineral_to_int[mineral]])
                 annot.get_bbox_patch().set_edgecolor(FG)
                 annot.set_visible(True)
-            else:
-                annot.set_visible(False)
         else:
             annot.set_visible(False)
         fig.canvas.draw_idle()
