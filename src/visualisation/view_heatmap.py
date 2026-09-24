@@ -49,13 +49,35 @@ def query_rolling_auc(cumulative_cube, raman_shift, window_width_cm):
     return auc_cube, band_starts, band_ends, idx_step
 
 
-def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y):
+def pixel_at(xdata, ydata, pixel_map):
+    """The pixel number at a data coordinate on the image.
+
+    Matplotlib reports coordinates outside the drawn image when the pointer is inside the
+    axes but in the margin ``imshow`` leaves, and a coordinate can land half a pixel past
+    the last one, so the position is rounded and then clamped to the grid rather than
+    trusted. Rounding before clamping is what makes a click on the right half of the last
+    pixel report that pixel rather than one past it.
+    """
+    rows, cols = pixel_map.shape
+    col = np.clip(int(xdata + 0.5), 0, cols - 1)
+    row = np.clip(int(ydata + 0.5), 0, rows - 1)
+    return pixel_map[row, col]
+
+
+def show_hsi_viewer(cube):
+    """Shows a cube as an image with the spectrum under the pointer, and the window under it.
+
+    Args:
+        cube (Cube): The cumulative cube, the spectra behind it, their axis, and the pixel
+            map. The grid size comes from the pixel map rather than from a second pair of
+            arguments that could disagree with it.
+    """
     apply_theme()
 
     # set the initial window width to 10 cm
     initial_window_width_cm = 10
 
-    raman_shift_arr = np.asarray(raman_shift)
+    raman_shift_arr = np.asarray(cube.axis)
     spectral_range  = raman_shift_arr[-1] - raman_shift_arr[0]
     mean_step       = float(np.mean(np.diff(raman_shift_arr))) 
 
@@ -75,7 +97,7 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
 
     def _recompute_auc(window_width_cm):
         auc_cube, band_starts, band_ends, idx_step = query_rolling_auc(
-            cumulative_cube, raman_shift_arr, window_width_cm
+            cube.cube, raman_shift_arr, window_width_cm
         )
         # update relevant states
         state["auc_cube"]    = auc_cube
@@ -138,7 +160,7 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
         _apply_intensity_mask(state["auc_cube"][:, :, 0], state["i_min"], state["i_max"]),
         aspect="equal", origin="upper"
     )
-    first_spectrum       = spectra_list[pixel_map[0, 0]]
+    first_spectrum       = cube.spectra[cube.pixel_map[0, 0]]
     (pixel_spectrum,)    = ax_spectrum.plot(raman_shift_arr, first_spectrum, color=ACCENT)
     (pixel_ln_spectrum,) = ax_ln_spectrum.plot(
         raman_shift_arr,
@@ -215,7 +237,7 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
     )
     text_box.label.set_color(FG)
     text_box.text_disp.set_color(FG)
-    text_box.set_val(str(pixel_map[0, 0]))
+    text_box.set_val(str(cube.pixel_map[0, 0]))
     ax_box.set_facecolor(WIDGET_PANEL)
 
     hover_text = ax_image.text(
@@ -262,7 +284,7 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
         cbar.set_ticks(np.linspace(i_min_cur, i_max_cur, 5))
         cbar.update_normal(scalar_mappable)
 
-        spectrum = spectra_list[pixel]
+        spectrum = cube.spectra[pixel]
         pixel_spectrum.set_ydata(spectrum)
         pixel_ln_spectrum.set_ydata(
             np.log(np.maximum(spectrum + state["correction"] + 1e-10, 1e-10))
@@ -343,9 +365,7 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
     def on_hover(event):
         new_text = ""
         if event.inaxes == ax_image:
-            col = np.clip(int(event.xdata + 0.5), 0, y - 1)
-            row = np.clip(int(event.ydata + 0.5), 0, x - 1)
-            new_text = f"Pixel {pixel_map[row, col]}"
+            new_text = f"Pixel {pixel_at(event.xdata, event.ydata, cube.pixel_map)}"
         if hover_text.get_text() != new_text:
             hover_text.set_text(new_text)
             fig.canvas.draw_idle()
@@ -353,12 +373,10 @@ def show_hsi_viewer(cumulative_cube, spectra_list, raman_shift, pixel_map, x, y)
     def on_click(event):
         if event.inaxes != ax_image or not event.dblclick:
             return
-        col   = np.clip(int(event.xdata + 0.5), 0, y - 1)
-        row   = np.clip(int(event.ydata + 0.5), 0, x - 1)
-        pixel = pixel_map[row, col]
+        pixel = pixel_at(event.xdata, event.ydata, cube.pixel_map)
         text_box.set_val(str(pixel))
 
-        spectrum = spectra_list[pixel]
+        spectrum = cube.spectra[pixel]
         pixel_spectrum.set_ydata(spectrum)
         pixel_ln_spectrum.set_ydata(
             np.log(np.maximum(spectrum + state["correction"] + 1e-10, 1e-10))

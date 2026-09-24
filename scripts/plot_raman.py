@@ -296,11 +296,11 @@ def main():
     path, x, y, mode, kwargs = prompt_args()
 
     if mode == "heatmap":
-        cumulative_cube, spectra_of_pixel, raman_shift, pixel_map = get_cumulative_hsi_cube(
+        cube = get_cumulative_hsi_cube(
             path, x, y, kwargs["pipeline_id"],
             kwargs["start"], kwargs["end"]
         )
-        show_hsi_viewer(cumulative_cube, spectra_of_pixel, raman_shift, pixel_map, x, y)
+        show_hsi_viewer(cube)
 
     elif mode == "phase_decomp":
         hsi_cube = get_raw_hsi_cube(path, x, y)

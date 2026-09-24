@@ -30,12 +30,12 @@ def test_traversal_follows_the_documented_route(grid_dir, golden):
     golden.check("grid.traversal_route", np.array(route))
     golden.check("grid.sorted_file_count", len(grid.get_sorted_files()))
 
-    _, _, _, pixel_map = get_cumulative_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS, 0)
-    golden.check("grid.pixel_map", pixel_map)
+    cube = get_cumulative_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS, 0)
+    golden.check("grid.pixel_map", cube.pixel_map)
 
-    assert np.array_equal(pixel_map, synthetic.expected_pixel_map()), (
+    assert np.array_equal(cube.pixel_map, synthetic.expected_pixel_map()), (
         "traversal no longer matches the boustrophedon route the loaders assume: "
-        f"got {pixel_map.tolist()}, expected {synthetic.expected_pixel_map().tolist()}"
+        f"got {cube.pixel_map.tolist()}, expected {synthetic.expected_pixel_map().tolist()}"
     )
 
 
@@ -52,26 +52,42 @@ def test_raw_cube_shape_and_axis(grid_dir, golden, raw_cube):
 
 
 def test_cumulative_cube_snapshots(grid_dir, golden):
-    """The four values ``get_cumulative_hsi_cube`` returns, per pipeline."""
+    """The four arrays ``get_cumulative_hsi_cube`` returns, per pipeline."""
     for pipeline_id in PIPELINES_SNAPSHOTTED:
-        auc_cube, spectra_list, cropped_axis, pixel_map = get_cumulative_hsi_cube(
-            grid_dir, synthetic.ROWS, synthetic.COLS, pipeline_id
-        )
+        cube = get_cumulative_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS, pipeline_id)
         prefix = f"data.cumulative.p{pipeline_id}"
-        golden.check(f"{prefix}.auc_cube", auc_cube)
-        golden.check(f"{prefix}.spectra_list", spectra_list)
-        golden.check(f"{prefix}.cropped_axis", cropped_axis)
-        golden.check(f"{prefix}.pixel_map", pixel_map)
+        golden.check(f"{prefix}.auc_cube", cube.cube)
+        golden.check(f"{prefix}.spectra_list", cube.spectra)
+        golden.check(f"{prefix}.cropped_axis", cube.axis)
+        golden.check(f"{prefix}.pixel_map", cube.pixel_map)
 
 
 def test_cropping_narrows_the_axis(grid_dir, golden):
     """A cropped run must land on the same axis positions as an uncropped one."""
     for label, start, end in (("full", None, None), ("window", 400.0, 900.0)):
-        auc_cube, _, cropped_axis, _ = get_cumulative_hsi_cube(
+        cube = get_cumulative_hsi_cube(
             grid_dir, synthetic.ROWS, synthetic.COLS, 0, start, end
         )
-        golden.check(f"data.crop.{label}.cropped_axis", cropped_axis)
-        golden.check(f"data.crop.{label}.auc_cube", auc_cube)
+        golden.check(f"data.crop.{label}.cropped_axis", cube.axis)
+        golden.check(f"data.crop.{label}.auc_cube", cube.cube)
+
+
+def test_the_cube_holds_the_four_arrays_together(grid_dir):
+    """The object replaces a positional tuple, so the four fields must be the four values.
+
+    A named field cannot be read in the wrong order, which is the whole reason for the
+    change, and the shapes have to agree with the grid and with each other.
+    """
+    cube = get_cumulative_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS, 0)
+
+    rows, cols = synthetic.ROWS, synthetic.COLS
+    assert cube.cube.shape == (rows, cols, cube.axis.size)
+    assert cube.pixel_map.shape == (rows, cols)
+    assert cube.spectra.shape == (rows * cols + 1, cube.axis.size)
+
+    assert np.array_equal(cube.pixel_map, synthetic.expected_pixel_map())
+    assert cube.pixel_map.min() == 1, "pixel numbering starts at 1, so row 0 of spectra is unused"
+    assert cube.pixel_map.max() == rows * cols
 
 
 def test_raw_cube_matches_the_snapshot(grid_dir, golden):

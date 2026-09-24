@@ -2,8 +2,35 @@ import os
 import numpy as np
 import pandas as pd
 import ramanspy as rp
+from dataclasses import dataclass
 from .grid import RamanGrid
 from scipy.integrate import cumulative_trapezoid
+
+
+@dataclass(frozen=True)
+class Cube:
+    """A cube of values per pixel together with the arrays that describe it.
+
+    ``get_cumulative_hsi_cube`` used to return these four as a tuple, which callers
+    unpacked by position. A tuple says nothing about the order, so a change to the order
+    was invisible at every call site, and a viewer that needed only the axis still had to
+    name the other three.
+
+    Attributes:
+        cube: The values, shaped (rows, cols, bands).
+        spectra: One row per pixel holding the preprocessed spectrum the cube was built
+            from, shaped (rows * cols + 1, bands). Row 0 is unused, because pixel
+            numbering starts at 1.
+        axis: The wavenumber axis the bands sit on, after any cropping, shaped (bands,).
+        pixel_map: The pixel number at each position, shaped (rows, cols), which is what
+            turns a click on an image back into a spectrum.
+    """
+
+    cube: np.ndarray
+    spectra: np.ndarray
+    axis: np.ndarray
+    pixel_map: np.ndarray
+
 
 def load_CNN_data(path="~/Code/Data_SH/poor_unoriented"):
     """Loads Raman Spectra dataset from RRUFF for training the CNN model.
@@ -69,6 +96,22 @@ def get_raw_hsi_cube(path, x, y, start=None, end=None):
     return rp.SpectralImage(spectral_data, spectral_axis)
 
 def get_cumulative_hsi_cube(path, x, y, pipeline_id, start=None, end=None):
+    """Loads the grid, preprocesses each pixel, and integrates each spectrum.
+
+    The cube holds the cumulative trapezoidal integral of every preprocessed spectrum,
+    so a band of it is the area under the spectrum up to that wavenumber, and the
+    difference between two bands is the area between them.
+
+    Args:
+        path: Directory holding the .txt spectra.
+        x, y: Rows and columns of the grid.
+        pipeline_id: Which preprocessing protocol to apply, 0 for none.
+        start, end: Wavenumber bounds to crop to. Either may be None.
+
+    Returns:
+        Cube: the cumulative cube, the spectra behind it, the cropped axis, and the
+        pixel number at each position.
+    """
     # grid object to traverse through the grid
     grid = RamanGrid(path, x, y)
 
@@ -112,4 +155,4 @@ def get_cumulative_hsi_cube(path, x, y, pipeline_id, start=None, end=None):
         pixel_map[row, col] = pixel
         pixel += 1
 
-    return cumulative_cube, spectra_list, cropped_axis, pixel_map
+    return Cube(cumulative_cube, spectra_list, cropped_axis, pixel_map)
