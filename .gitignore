@@ -39,3 +39,9 @@ Thumbs.db
 # working artefacts the plan/report workflow writes.
 CLAUDE.md
 .lavish/
+
+# --- Retired code ---
+# Code removed from the pipeline but worth keeping readable on disk. It is not
+# part of the package and a fresh clone will not have it; git history holds the
+# record of what was removed.
+legacy/

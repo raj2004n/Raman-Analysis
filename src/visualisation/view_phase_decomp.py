@@ -3,7 +3,7 @@ import numpy as np
 import ramanspy as rp
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-from .theme import apply_theme, BG, FG, GRID, ACCENT
+from .theme import apply_theme
 from src.analysis.phase_number_est import estimate_phase_number
 
 def show_spectra_ext_viewer(hsi_cube, n_components, start=None, end=None):

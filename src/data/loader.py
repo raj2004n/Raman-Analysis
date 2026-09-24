@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import ramanspy as rp
 from .grid import RamanGrid
-from scipy.signal import convolve
 from scipy.integrate import cumulative_trapezoid
 
 def load_CNN_data(path="~/Code/Data_SH/poor_unoriented"):
@@ -68,64 +67,6 @@ def get_raw_hsi_cube(path, x, y, start=None, end=None):
         spectral_data[row, col] = intensity[start_idx:end_idx]
     
     return rp.SpectralImage(spectral_data, spectral_axis)
-
-def get_area_under_hsi_cube(path, x, y, pipeline_id, rolling_window_width, start=None, end=None):
-    grid = RamanGrid(path, x, y)
-    pipeline = build_pipeline(pipeline_id)
-    cropper = rp.preprocessing.misc.Cropper(region=(start, end))
-
-    # read spectral axis from first file only, same across all so its fine
-    files = grid.get_sorted_files()
-    spectral_axis, _ = read_spectrum(files[0])
-
-    # get cropped spectral axis
-    ref_spectrum = rp.Spectrum(np.zeros(len(spectral_axis)), spectral_axis)
-    ref_spectrum = cropper.apply(ref_spectrum)
-    cropped_axis = ref_spectrum.spectral_axis
-
-    # get number of indexes that correspond to rolling window width
-    mean_step = np.mean(np.diff(cropped_axis))
-    idx_step = max(2, int(rolling_window_width // mean_step))
-
-    # trapezoidal kernel for area under curve using convolution
-    auc_kernel = np.ones(idx_step) * mean_step
-    auc_kernel[0] = 0.5 * mean_step
-    auc_kernel[-1] = 0.5 * mean_step
-
-    n_bands = len(cropped_axis) - idx_step + 1 # accounting area
-
-    if n_bands <= 0:
-        raise ValueError(
-            f"Rolling window width was too large!"
-        )
-
-    auc_cube = np.zeros((x, y, n_bands))
-    spectra_list = np.zeros((x * y + 1, len(cropped_axis)))
-    pixel_map = np.zeros((x, y), dtype=int) # map of pixel positions
-
-    pixel = 1 # initial pixel
-    for file, row, col in grid.traverse():
-        spectral_axis, spectral_data = read_spectrum(file)
-
-        # crop and preprocess spectrum
-        spectrum = rp.Spectrum(spectral_data, spectral_axis)
-        spectrum = cropper.apply(spectrum)
-        if pipeline is not None:
-            spectrum = pipeline.apply(spectrum)
-
-        intensity_vals = spectrum.spectral_data # preprocessed now
-
-        # store full preprocessed spectral data for plotting later
-        spectra_list[pixel] = intensity_vals
-
-        # convolve with kernet to get rolling window areas
-        auc_cube[row, col] = convolve(intensity_vals, auc_kernel, mode='valid')
-
-        # store for plotting later
-        pixel_map[row, col] = pixel
-        pixel += 1
-    
-    return auc_cube, spectra_list, cropped_axis, idx_step, pixel_map
 
 def get_cumulative_hsi_cube(path, x, y, pipeline_id, start=None, end=None):
     # grid object to traverse through the grid

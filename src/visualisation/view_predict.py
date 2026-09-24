@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from src.cnn.predict import predict
 from matplotlib.patches import Patch
 from matplotlib.colors import ListedColormap
-from .theme import apply_theme, BG, FG, GRID, ACCENT
+from .theme import apply_theme, FG
 
 def _hover_annotation(row, col, masked_labels, confidence_map, predicted_top5_map,
                       confidence_threshold):

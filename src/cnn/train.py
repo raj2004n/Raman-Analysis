@@ -2,6 +2,7 @@
 import argparse
 
 from keras.utils import to_categorical
+from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 from keras.utils import plot_model
 from keras.callbacks import EarlyStopping
@@ -10,7 +11,6 @@ from src.data.loader import *
 from src.cnn.cnn_preprocessing import *
 from src.cnn.model import *
 from src.cnn.evaluate import *
-from collections import Counter
 from src.cnn import runs
 
 parser = argparse.ArgumentParser(
@@ -60,15 +60,6 @@ x_test = standardise_data(spectra_test, target_length=input_size, x_min=x_min, x
 
 x_all, y_all_labels = build_augmented_dataset(x_train, y_train_labels, 1, 1)
 
-"""
-# augment by summing possible linear combinations
-x_combos, y_combos_labels = build_augmented_dataset(x_train, y_train_labels, n_combination=1)
-
-# update training datasset to include augmented data
-x_train = np.concatenate([x_train, x_combos], axis=0)
-y_train_labels = np.concatenate([y_train_labels, y_combos_labels], axis=0)
-"""
-
 model = CNN_Model(num_classes, input_size)
 model.summary()
 plot_model(model, to_file=run_dir / runs.MODEL_PLOT_NAME, show_shapes=True)
@@ -78,26 +69,6 @@ classes_array = np.arange(num_classes)
 y_all_integers = le.transform(y_all_labels)
 class_weights = compute_class_weight(class_weight='balanced', classes=classes_array, y=y_all_integers)
 class_weight_dict = dict(enumerate(class_weights))
-
-"""
-train_gen = DataGenerator(
-    x_all, y_all_integers,
-    num_classes,
-    input_size,
-    batch_size=64,
-    shuffle=True,
-    augment=True
-    )
-
-val_gen = DataGenerator(
-    x_test, le.transform(y_test_labels),
-    num_classes,
-    input_size,
-    batch_size=64,
-    shuffle=False,
-    augment=False
-    )
-"""
 
 y_all = to_categorical(y_all_integers, num_classes)
 early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
