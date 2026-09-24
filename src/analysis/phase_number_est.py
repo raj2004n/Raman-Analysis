@@ -26,7 +26,8 @@ def _n_by_pca(hsi_cube):
     ev = pca_elbow.explained_variance_
     x = np.arange(1, 11)
     kn = kneed.KneeLocator(x, ev, curve='convex', direction='decreasing')
-    n_elbow = kn.elbow if kn.elbow else None
+    # None when the curve has no knee, so this method has no estimate to contribute
+    n_elbow = kn.elbow
 
     """
     # Kaiser's method: Only keep those whose eigenvalues greater than 1.
@@ -53,20 +54,28 @@ def _n_by_hfc(hsi_cube):
 
 def _determine_confidence(ns):
     """
-    Simple method to determine the confidence by finding the difference in predictions.
+    How far the estimates agree with each other.
+
+    Args:
+        ns (Sequence[int]): The estimates that counted. A method that produced no
+            estimate is not in this sequence.
 
     Possible confidence values:
-    - 2 three predictions match
-    - 1 two predictions match
-    - 0 no prediction match
+    - 'high' three or more estimates, all the same
+    - 'moderate' some of them the same, or fewer than three of them
+    - 'low' no two of them the same
+
+    A pair that agrees cannot reach 'high'. Three methods agreeing is stronger
+    evidence than two agreeing, and callers read 'high' as a number to rely on.
     """
-    p1, p2, p3 = ns
-    if p1 == p2 == p3:
-        return 'high'
-    elif p1 == p2 or p1 == p3 or p2 == p3:
-        return 'moderate'
-    else:
+    values = list(ns)
+    if len(values) < 2:
         return 'low'
+    if len(set(values)) == 1:
+        return 'high' if len(values) >= 3 else 'moderate'
+    if len(set(values)) < len(values):
+        return 'moderate'
+    return 'low'
 
 
 def estimate_phase_number(hsi_cube):
@@ -97,7 +106,9 @@ def estimate_phase_number(hsi_cube):
 
     print("-----------------------------")
     print(f"PCA Elbow estimate: {n_elbow}")
-    if n_elbow > 10:
+    if n_elbow is None:
+        print("No elbow found in the PCA variance curve, so no estimate from this method.")
+    elif n_elbow > 10:
         n_elbow = 1
         print(f"Rejected PCA elbow estimate.")
         print(f"Reason: Estimate was too high (>10).")
@@ -105,7 +116,9 @@ def estimate_phase_number(hsi_cube):
     print("-----------------------------")
     print(f"NW-HFC estimates: {ns_hfc}")
     # pick ns_hfc which is closest to mean pca
-    ns = np.array([n_80, n_elbow])
+    # A method that found nothing is left out of the vote entirely. Note that a
+    # rejected estimate is not: it has already been replaced by 1 above and votes.
+    ns = np.array([n for n in (n_80, n_elbow) if n is not None])
     mean_pca = ns.mean()
     idx = np.abs(ns_hfc - mean_pca).argmin()
     n_hfc = ns_hfc[idx]
@@ -125,7 +138,7 @@ def estimate_phase_number(hsi_cube):
     print("-----------------------------")
     print(f"Final estimates of number of distinct spectra:")
     print(f"PCA 80%: {n_80}")
-    print(f"PCA Elbow: {n_elbow}")
+    print(f"PCA Elbow: {n_elbow if n_elbow is not None else 'no estimate'}")
     print(f"NWHFC: {ns_hfc}")
     print("-----------------------------")
     

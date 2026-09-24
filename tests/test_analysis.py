@@ -76,6 +76,35 @@ def test_confidence_rule_is_pinned():
     assert phase_number_est._determine_confidence((3, 3, 1)) == "moderate"
     assert phase_number_est._determine_confidence((4, 3, 1)) == "low"
 
+    # Fewer than three estimates cannot be 'high', however much they agree, and a
+    # single estimate has nothing to agree with.
+    assert phase_number_est._determine_confidence((3, 3)) == "moderate"
+    assert phase_number_est._determine_confidence((3, 4)) == "low"
+    assert phase_number_est._determine_confidence((3,)) == "low"
+
+
+def test_missing_elbow_does_not_crash_and_does_not_vote(monkeypatch, raw_cube):
+    """``kneed`` returns None when the variance curve has no knee at all.
+
+    That None used to reach the ``> 10`` rejection check on the next line and raise
+    ``TypeError``, which is the default path for the viewer and the CLI when the phase
+    count is left at ``-1``.
+
+    The method now contributes no estimate rather than an estimate of 1, so two
+    methods agreeing on 3 report ``moderate``: unanimity between two is weaker
+    evidence than unanimity between three.
+    """
+    monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (3, None))
+    monkeypatch.setattr(phase_number_est, "_n_by_hfc", lambda cube: np.array([3, 3, 3]))
+
+    predicted_n, confidence = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+
+    assert predicted_n == 3
+    assert confidence == "moderate", (
+        "a missing elbow leaves two estimates that agree, which must not be reported "
+        "with the same confidence as three that agree"
+    )
+
 
 def test_rejected_estimate_is_counted_as_a_vote(monkeypatch, raw_cube, golden):
     """Characterises the current combination rule around the internal threshold of 10.
@@ -129,6 +158,29 @@ def test_rejection_threshold_is_ten(monkeypatch, raw_cube, golden):
 
     assert kept == 10, "an estimate of exactly 10 is currently kept, not rejected"
     assert rejected == 3, "an estimate of 11 is currently replaced with 1, leaving 3 as the answer"
+
+
+def test_a_variance_curve_with_no_knee_survives_the_method(monkeypatch, raw_cube):
+    """The same failure, driven through the real ``_n_by_pca`` rather than stubbed.
+
+    ``kneed`` is replaced so that the method actually returns None, which is what the
+    previous test assumes but does not exercise.
+    """
+
+    class NoKnee:
+        def __init__(self, *args, **kwargs):
+            self.elbow = None
+
+    monkeypatch.setattr(phase_number_est.kneed, "KneeLocator", NoKnee)
+
+    prepared = _preprocessed(raw_cube)
+    n_80, n_elbow = phase_number_est._n_by_pca(prepared)
+    assert n_elbow is None
+
+    predicted_n, confidence = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+
+    assert predicted_n in set(range(1, 12))
+    assert confidence in {"high", "moderate", "low"}
 
 
 def test_nmf_phase_spectra_are_pinned(raw_cube, golden):
