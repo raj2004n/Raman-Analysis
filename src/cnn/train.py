@@ -10,6 +10,7 @@ from src.cnn.cnn_preprocessing import *
 from src.cnn.model import *
 from src.cnn.evaluate import *
 from collections import Counter
+from src import paths
 
 path="~/Code/Data_SH/poor_unoriented"
 input_size = 2000
@@ -59,7 +60,7 @@ y_train_labels = np.concatenate([y_train_labels, y_combos_labels], axis=0)
 
 model = CNN_Model(num_classes, input_size)
 model.summary()
-plot_model(model, to_file='outputs/model_plot_final_poor2.png', show_shapes=True)
+plot_model(model, to_file=paths.output_path('model_plot_final_poor2.png'), show_shapes=True)
 
 # create a class array of ints, since classes are labelled as string 
 classes_array = np.arange(num_classes)
@@ -103,4 +104,4 @@ model.save("artifacts/models/raman_cnn_model_final_poor2.keras")
 model.save_weights("artifacts/weights/test_final_poor2.weights.h5")
 np.save("artifacts/metadata/wavenumber_range_final_poor2.npy", np.array([x_min, x_max]))
 
-show_results(history, model, x_test, y_test)
+show_results(history, model, x_test, y_test, paths.output_path("training_results_final_poor2.png"))

@@ -3,6 +3,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from src.data.loader import *
 from src.data.grid import RamanGrid
+from src import paths
 from src.visualisation.view_heatmap import show_hsi_viewer
 from src.visualisation.view_phase_decomp import show_spectra_ext_viewer
 from src.visualisation.view_predict import show_prediction_map
@@ -65,7 +66,8 @@ HELP_TEXT = {
                         Pixels below this threshold are shown as 'Unknown'.
                         Example: 0.80 means only predictions ≥80% confidence are shown.
   SAVE PATH: File path to save the prediction map image.
-             Press Enter to use the default (outputs/prediction_map.png).
+             Press Enter to use the default, which is prediction_map.png in the
+             outputs directory next to the repository, wherever you run this from.
 """,
 }
 
@@ -235,9 +237,10 @@ def prompt_predict_args():
         except ValueError:
             print("Please enter a number between 0 and 1 (e.g. 0.80).")
 
-    print("\nSave path for prediction map (default: outputs/prediction_map.png, or '?' for help)")
+    default_save_path = str(paths.output_path("prediction_map.png"))
+    print(f"\nSave path for prediction map (default: {default_save_path}, or '?' for help)")
     while True:
-        save_path = _input("> ") or "outputs/prediction_map.png"
+        save_path = _input("> ") or default_save_path
         if save_path == "?":
             print(HELP_TEXT["predict"])
             continue

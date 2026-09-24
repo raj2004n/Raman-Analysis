@@ -8,6 +8,8 @@ import keras
 from keras.utils import to_categorical
 import matplotlib.pyplot as plt
 
+from src import paths
+
 def standardise_data(spectra_list, target_length, x_min=0, x_max=1400):
     standardised_data = []
     # new wavenumber axis the intensity will be interpolated to
@@ -59,7 +61,7 @@ def plot_standardised_comparison(spectra_list, n_samples=4, target_length=2864, 
         axes[i, 1].set_ylabel("Normalised intensity")
 
     plt.tight_layout()
-    plt.savefig('outputs/standardised_comparison.png', dpi=150, bbox_inches='tight')
+    plt.savefig(paths.output_path('standardised_comparison.png'), dpi=150, bbox_inches='tight')
     plt.show()
 
 def augment_shift(spectrum):
