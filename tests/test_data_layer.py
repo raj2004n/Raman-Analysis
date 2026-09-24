@@ -134,6 +134,42 @@ def test_a_repeated_pixel_number_is_an_error(tmp_path):
         RamanGrid(directory, 2, 2).get_sorted_files()
 
 
+def test_the_right_number_of_files_is_not_enough(tmp_path):
+    """The count can match while the numbers do not, so the numbers are what get checked.
+
+    Renaming pixel 4 to 5 leaves four files in a 2x2 grid, which satisfies any count,
+    but there is now no pixel 4 and a pixel 5 with no place on the map. Counting alone
+    would accept this and build a grid with a hole in it.
+    """
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    (directory / "FullGrid[4](-18004, -324, -14679).txt").rename(
+        directory / "FullGrid[5](-18005, -325, -14680).txt"
+    )
+
+    with pytest.raises(ValueError) as raised:
+        RamanGrid(directory, 2, 2).get_sorted_files()
+
+    message = str(raised.value)
+    assert "Pixel numbers with no file: [4]" in message
+    assert "found 4" in message
+
+
+def test_a_duplicate_that_keeps_the_count_is_still_an_error(tmp_path):
+    """Counting a pixel twice loses another pixel, and the file count stays correct."""
+    directory = synthetic.write_grid(tmp_path / "grid", 2, 2)
+    (directory / "FullGrid[4](-18004, -324, -14679).txt").unlink()
+    source = directory / "FullGrid[3](-18003, -323, -14678).txt"
+    (directory / "FullGrid[3](-18009, -329, -14684).txt").write_text(source.read_text())
+
+    with pytest.raises(ValueError) as raised:
+        RamanGrid(directory, 2, 2).get_sorted_files()
+
+    message = str(raised.value)
+    assert "used by more than one file: [3]" in message
+    assert "Pixel numbers with no file: [4]" in message
+    assert "found 4" in message
+
+
 def test_a_directory_with_no_numbered_files_says_so(tmp_path):
     """Only unnumbered files present: the error names them instead of the sort failing."""
     directory = tmp_path / "grid"
