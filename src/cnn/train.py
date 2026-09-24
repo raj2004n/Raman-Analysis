@@ -1,16 +1,30 @@
 
+import argparse
+
 from keras.utils import to_categorical
 from sklearn.utils.class_weight import compute_class_weight
 from keras.utils import plot_model
 from keras.callbacks import EarlyStopping
-import pickle
 
 from src.data.loader import *
 from src.cnn.cnn_preprocessing import *
 from src.cnn.model import *
 from src.cnn.evaluate import *
 from collections import Counter
-from src import paths
+from src.cnn import runs
+
+parser = argparse.ArgumentParser(
+    description="Train the Raman CNN and write one run directory for prediction to load."
+)
+parser.add_argument(
+    "--name",
+    default=None,
+    help="name for the run directory; used when predicting. Defaults to a timestamp.",
+)
+args = parser.parse_args()
+
+run_name = args.name or runs.new_run_name()
+run_dir = runs.run_directory(run_name)
 
 path="~/Code/Data_SH/poor_unoriented"
 input_size = 2000
@@ -37,9 +51,6 @@ y_test_labels = y_data[test_index]
 
 y_test = to_categorical(le.transform(y_test_labels), num_classes)
 
-with open("artifacts/encoders/label_encoder_final_poor2.pkl", "wb") as f:
-    pickle.dump(le, f)
-
 spectra_train = [spectra_list[i] for i in train_index]
 spectra_test = [spectra_list[i] for i in test_index]
 
@@ -60,7 +71,7 @@ y_train_labels = np.concatenate([y_train_labels, y_combos_labels], axis=0)
 
 model = CNN_Model(num_classes, input_size)
 model.summary()
-plot_model(model, to_file=paths.output_path('model_plot_final_poor2.png'), show_shapes=True)
+plot_model(model, to_file=run_dir / runs.MODEL_PLOT_NAME, show_shapes=True)
 
 # create a class array of ints, since classes are labelled as string 
 classes_array = np.arange(num_classes)
@@ -99,9 +110,18 @@ history = model.fit(
     class_weight=class_weight_dict,
     )
 
-# save full model and wavenumber range
-model.save("artifacts/models/raman_cnn_model_final_poor2.keras")
-model.save_weights("artifacts/weights/test_final_poor2.weights.h5")
-np.save("artifacts/metadata/wavenumber_range_final_poor2.npy", np.array([x_min, x_max]))
+# one directory per run, so the input length and the wavenumber range travel with
+# the model instead of having to be remembered when predicting
+manifest = runs.save_run(
+    run_dir,
+    name=run_name,
+    model=model,
+    encoder=le,
+    input_size=input_size,
+    num_classes=num_classes,
+    x_min=x_min,
+    x_max=x_max,
+)
+print(f"Wrote run '{manifest.name}' to {run_dir}")
 
-show_results(history, model, x_test, y_test, paths.output_path("training_results_final_poor2.png"))
+show_results(history, model, x_test, y_test, run_dir / runs.TRAINING_CURVES_NAME)

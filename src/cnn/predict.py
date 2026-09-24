@@ -1,28 +1,37 @@
 import numpy as np
-import keras
-import pickle
+from src.cnn import runs
 from src.data.loader import get_raw_hsi_cube
 from src.cnn.cnn_preprocessing import standardise_data
 
-input_size = 1024
 
-def load_artifacts(model_path, encoder_path, wavenumber_path):
-    model = keras.models.load_model(model_path)
-    with open(encoder_path, "rb") as f:
-        le = pickle.load(f)
-    wavenumber_range = np.load(wavenumber_path)
-    return model, le, wavenumber_range
+def predict(run_path, path, x, y):
+    """Classifies every pixel of a map using the model in a trained run.
 
-def predict(path, x, y):
-    model, le, wavenumber_range = load_artifacts(
-        "artifacts/models/raman_cnn_model_poor.keras",
-        "artifacts/encoders/label_encoder_poor.pkl",
-        "artifacts/metadata/wavenumber_range_poor.npy"
-    )
+    Args:
+        run_path (str | Path): A run directory written by training. Its manifest says
+            how long a spectrum to build and over what wavenumber range, so those
+            settings come from the model rather than from this file.
+        path (str): Directory holding the ``FullGrid[n](...)`` spectra.
+        x (int): Number of rows in the grid.
+        y (int): Number of columns in the grid.
 
-    x_min, x_max = wavenumber_range[0], wavenumber_range[1]
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The most likely mineral per pixel, and the five
+            most likely with their probabilities.
+
+    Raises:
+        FileNotFoundError: ``run_path`` is not a run directory.
+        ValueError: The run's model and manifest disagree, or the spectra do not cover
+            the range the model was trained on.
+    """
+    run = runs.load_run(run_path)
+    manifest = run.manifest
+    model = run.model
+    le = run.encoder
 
     hsi_cube = get_raw_hsi_cube(path, x, y)
+    runs.check_axis_covers_training_range(manifest, hsi_cube.spectral_axis)
+
     length, _ = hsi_cube.shape
 
     predicted_labels_map = []
@@ -31,7 +40,12 @@ def predict(path, x, y):
     for l in range(length):
         # standardise each row of pixels for prediction
         spectra_list = list(hsi_cube[l])
-        x_new = standardise_data(spectra_list, target_length=input_size, x_min=x_min, x_max=x_max)
+        x_new = standardise_data(
+            spectra_list,
+            target_length=manifest.input_size,
+            x_min=manifest.x_min,
+            x_max=manifest.x_max,
+        )
         predictions = model.predict(x_new, verbose=0)  # (width, num_classes)
 
         # top prediction per pixel

@@ -3,6 +3,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 from src.data.loader import *
 from src.data.grid import RamanGrid
+from src.cnn import runs
 from src import paths
 from src.visualisation.view_heatmap import show_hsi_viewer
 from src.visualisation.view_phase_decomp import show_spectra_ext_viewer
@@ -68,6 +69,12 @@ HELP_TEXT = {
   SAVE PATH: File path to save the prediction map image.
              Press Enter to use the default, which is prediction_map.png in the
              outputs directory next to the repository, wherever you run this from.
+""",
+    "run": """
+  RUN: The directory holding a trained model, written by training. It holds the
+       model, the label encoder and a run.json recording the input length and the
+       wavenumber range the model was trained on, which is where this mode reads
+       those settings from. Pressing Enter uses the most recently created run.
 """,
 }
 
@@ -222,7 +229,40 @@ def prompt_phase_decomp_args():
         "end": end,
     }
 
+def prompt_run_dir():
+    """Which trained run to predict with. Returns a path to a run directory."""
+    names = runs.list_runs()
+
+    if not names:
+        print("\nNo trained runs found. Training writes one directory per model, and")
+        print("this mode reads the model's settings from the run.json inside it.")
+        while True:
+            raw = _input("Run directory: ")
+            if raw == "?":
+                print(HELP_TEXT["run"])
+                continue
+            if raw:
+                return raw
+            print("Please enter the path to a run directory, or '?' for help.")
+
+    print("\nWhich trained run? (Enter for the most recent, or '?' for help)")
+    for name in names:
+        print(f"  {name}")
+    while True:
+        raw = _input("> ") or names[0]
+        if raw == "?":
+            print(HELP_TEXT["run"])
+            continue
+        if raw in names:
+            return str(runs.run_directory(raw))
+        if os.path.isdir(os.path.expanduser(raw)):
+            return os.path.expanduser(raw)
+        print("Please enter one of the names above, or the path to a run directory.")
+
+
 def prompt_predict_args():
+    run_path = prompt_run_dir()
+
     print("\nConfidence threshold (default: 0.80, or '?' for help)")
     while True:
         confidence_threshold = _input("> ") or "0.80"
@@ -247,6 +287,7 @@ def prompt_predict_args():
         break
 
     return {
+        "run_path": run_path,
         "confidence_threshold": confidence_threshold,
         "save_path": save_path,
     }
@@ -266,7 +307,11 @@ def main():
         show_spectra_ext_viewer(hsi_cube, kwargs["phase_number"], kwargs["start"], kwargs["end"])
 
     elif mode == "predict":
-        show_prediction_map(path, x, y, confidence_threshold=kwargs["confidence_threshold"], save_path=kwargs["save_path"])
+        show_prediction_map(
+            kwargs["run_path"], path, x, y,
+            confidence_threshold=kwargs["confidence_threshold"],
+            save_path=kwargs["save_path"],
+        )
         
 if __name__ == "__main__":
     main()

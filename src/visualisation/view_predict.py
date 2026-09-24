@@ -45,10 +45,10 @@ def _hover_annotation(row, col, masked_labels, confidence_map, predicted_top5_ma
     return lines, masked_labels[row, col]
 
 
-def show_prediction_map(path, x, y, confidence_threshold=0.80, save_path=None):
+def show_prediction_map(run_path, path, x, y, confidence_threshold=0.80, save_path=None):
     apply_theme()
-    
-    predicted_labels_map, predicted_top5_map = predict(path, x, y)
+
+    predicted_labels_map, predicted_top5_map = predict(run_path, path, x, y)
     
     length, width = predicted_labels_map.shape
 
