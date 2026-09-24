@@ -6,7 +6,7 @@ A Python framework for automated analysis of Raman surface mapping data in conde
 
 ## Overview
 
-Raman surface mapping produces large volumes of spectral data — hundreds to thousands of individual spectra — that are difficult to interpret manually. This framework provides four analytical tools to address this:
+Raman surface mapping produces large volumes of spectral data - hundreds to thousands of individual spectra - that are difficult to interpret manually. This framework provides four analytical tools to address this:
 
 | Module | Description |
 |--------|-------------|
@@ -112,17 +112,17 @@ End of spectra in cm⁻¹ (press Enter to skip, or '?' for help)
 
 Applied prior to estimation and extraction:
 
-- **Whitaker-Hayes despiking** — removes cosmic ray artefacts
-- **Asymmetric least squares (ASLS) baseline correction** — removes fluorescence background
-- **Min-max normalisation** — scales spectra to [0, 1] for NMF compatibility
+- **Whitaker-Hayes despiking** - removes cosmic ray artefacts
+- **Asymmetric least squares (ASLS) baseline correction** - removes fluorescence background
+- **Min-max normalisation** - scales spectra to [0, 1] for NMF compatibility
 
 ### Distinct Spectra Estimation
 
 Two methods are implemented and compared:
 
-- **PCA (scree method)** — identifies the elbow in the eigenvalue spectrum; found to be the most reliable estimator for condensed matter Raman data
-- **PCA (80% explained variance)** — tends to overestimate; sensitive to SNR and spectral range
-- **Noise-whitened HFC (NWHFC)** — hyperspectral virtual dimensionality method; evaluated across false alarm rates from 10⁻² to 10⁻⁷. Found to be volatile and unreliable without sample-specific tuning for this data type
+- **PCA (scree method)** - identifies the elbow in the eigenvalue spectrum; found to be the most reliable estimator for condensed matter Raman data
+- **PCA (80% explained variance)** - tends to overestimate; sensitive to SNR and spectral range
+- **Noise-whitened HFC (NWHFC)** - hyperspectral virtual dimensionality method; evaluated across false alarm rates from 10⁻² to 10⁻⁷. Found to be volatile and unreliable without sample-specific tuning for this data type
 
 ### NMF Extraction
 
@@ -161,11 +161,11 @@ Reconstructed from Liu et al., *Analyst*, 2017. A LeNet-variant 1D CNN:
 
 Key libraries used:
 
-- [RamanSPy](https://github.com/bagheria-lab/ramanspy) — Raman data structures, NMF, preprocessing pipelines
-- [scikit-learn](https://scikit-learn.org/) — PCA, StandardScaler
-- [PySptools](https://pysptools.sourceforge.io/) — NWHFC virtual dimensionality
-- [Keras](https://keras.io/) — CNN implementation
-- [NumPy](https://numpy.org/) — numerical operations
+- [RamanSPy](https://github.com/bagheria-lab/ramanspy) - Raman data structures, NMF, preprocessing pipelines
+- [scikit-learn](https://scikit-learn.org/) - PCA, StandardScaler
+- [PySptools](https://pysptools.sourceforge.io/) - NWHFC virtual dimensionality
+- [Keras](https://keras.io/) - CNN implementation
+- [NumPy](https://numpy.org/) - numerical operations
 
 See `requirements.txt` for the full list.
 
@@ -182,5 +182,5 @@ See `requirements.txt` for the full list.
 
 ## Author
 
-**Raj Negi** — MPhys Computational Physics, University of Edinburgh
+**Raj Negi** - MPhys Computational Physics, University of Edinburgh
 [github.com/raj2004n](https://github.com/raj2004n)

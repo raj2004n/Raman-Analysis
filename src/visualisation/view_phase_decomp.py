@@ -80,7 +80,7 @@ def show_spectra_ext_viewer(hsi_cube, n_components, start=None, end=None):
         plt.show()
 
     else:
-        # too many — show individually
+        # too many - show individually
         for i, abundance_map in enumerate(abundance_maps):
             rp.plot.image(
                 abundance_map,

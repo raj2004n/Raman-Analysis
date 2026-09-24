@@ -49,12 +49,12 @@ def plot_standardised_comparison(spectra_list, n_samples=4, target_length=2864, 
         y_cub /= (y_cub.max() + 1e-8)
 
         axes[i, 0].plot(new_x, y_lin, color='steelblue')
-        axes[i, 0].set_title(f"Spectrum {i} — Linear")
+        axes[i, 0].set_title(f"Spectrum {i} - Linear")
         axes[i, 0].set_xlabel("Wavenumber (cm⁻¹)")
         axes[i, 0].set_ylabel("Normalised intensity")
 
         axes[i, 1].plot(new_x, y_cub, color='darkorange')
-        axes[i, 1].set_title(f"Spectrum {i} — Cubic")
+        axes[i, 1].set_title(f"Spectrum {i} - Cubic")
         axes[i, 1].set_xlabel("Wavenumber (cm⁻¹)")
         axes[i, 1].set_ylabel("Normalised intensity")
 
