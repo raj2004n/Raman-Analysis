@@ -23,6 +23,7 @@ import pytest
 import ramanspy as rp
 
 from src.analysis import phase_number_est
+from src.config import NmfConfig
 from tests import synthetic
 
 N_COMPONENTS = 3
@@ -184,18 +185,43 @@ def test_a_variance_curve_with_no_knee_survives_the_method(monkeypatch, raw_cube
 
 
 def test_nmf_phase_spectra_are_pinned(raw_cube, golden):
-    """The NMF end members, with settings copied from ``view_phase_decomp.py:21``.
+    """The NMF end members, with the settings the viewer uses.
 
-    Those settings are passed as an inline dictionary by the viewer today. If they are
-    later moved into a config object, this test should read them from there instead of
-    repeating them.
+    The settings come from ``NmfConfig``, which is where the viewer reads them, so
+    changing a default there moves this snapshot rather than passing unnoticed.
+    Running the decomposition directly rather than through the viewer keeps the
+    figures out of it; the viewer passing its config on is covered separately.
 
     A note on reproducibility: ``random_state`` is ``None``, but the ``nndsvda``
     initialisation is deterministic, so this path is stable in practice. That is worth
     knowing, because it means a missing seed is not what makes this particular result
     hard to reproduce.
     """
-    settings = {
+    settings = NmfConfig().as_kwargs(N_COMPONENTS)
+    pipeline = rp.preprocessing.Pipeline(
+        [
+            rp.preprocessing.despike.WhitakerHayes(),
+            rp.preprocessing.baseline.ASLS(),
+            rp.preprocessing.normalise.MinMax(),
+        ]
+    )
+
+    np.random.seed(synthetic.FIXTURE_SEED)
+    nmf = rp.analysis.decompose.NMF(**settings)
+    abundance_maps, phases = _quietly(nmf.apply, pipeline.apply(raw_cube))
+
+    golden.check("analysis.nmf.phase_spectra", getattr(phases, "spectral_data", phases))
+    golden.check("analysis.nmf.abundance_maps", np.asarray(abundance_maps))
+
+
+def test_the_nmf_config_holds_the_settings_the_viewer_used_to_inline():
+    """The defaults are the values that were in the viewer's dictionary.
+
+    Pinned as a whole mapping rather than key by key, so a renamed or dropped setting
+    is a failure here instead of a kwarg that silently stops being passed.
+    """
+    assert NmfConfig().as_kwargs(3) == {
+        "n_components": 3,
         "init": "nndsvda",
         "solver": "cd",
         "beta_loss": "frobenius",
@@ -208,17 +234,3 @@ def test_nmf_phase_spectra_are_pinned(raw_cube, golden):
         "verbose": 0,
         "shuffle": False,
     }
-    pipeline = rp.preprocessing.Pipeline(
-        [
-            rp.preprocessing.despike.WhitakerHayes(),
-            rp.preprocessing.baseline.ASLS(),
-            rp.preprocessing.normalise.MinMax(),
-        ]
-    )
-
-    np.random.seed(synthetic.FIXTURE_SEED)
-    nmf = rp.analysis.decompose.NMF(n_components=N_COMPONENTS, **settings)
-    abundance_maps, phases = _quietly(nmf.apply, pipeline.apply(raw_cube))
-
-    golden.check("analysis.nmf.phase_spectra", getattr(phases, "spectral_data", phases))
-    golden.check("analysis.nmf.abundance_maps", np.asarray(abundance_maps))

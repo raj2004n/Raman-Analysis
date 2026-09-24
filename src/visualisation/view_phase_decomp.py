@@ -5,33 +5,37 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 from .theme import apply_theme
 from src.analysis.phase_number_est import estimate_phase_number
+from src.config import NmfConfig
 
-def show_spectra_ext_viewer(hsi_cube, n_components, start=None, end=None):
+def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, nmf_config=None):
+    """Unmixes the cube and shows the end-member spectra and their abundance maps.
+
+    Args:
+        hsi_cube: The cube to decompose.
+        n_components: How many phases to look for, or None to estimate it from the
+            cube. -1 is accepted as the same thing, since that is the value the
+            command line prompt has always offered for "estimate it".
+        start, end: Wavenumber bounds to crop to before unmixing. Either may be None.
+        nmf_config (NmfConfig, optional): The decomposition settings. Defaults to
+            NmfConfig(), whose values are the ones this viewer used to inline.
+    """
     apply_theme()
-    
+
+    if n_components == -1:
+        n_components = None
+
     if start is not None or end is not None:
         cropper = rp.preprocessing.misc.Cropper(region=(start, end))
         hsi_cube = cropper.apply(hsi_cube)
 
     # estimate number of phases if requested
-    if n_components == -1:
+    if n_components is None:
         n_components, confidence = estimate_phase_number(hsi_cube)
         print(f"Estimated {n_components} phases with {confidence} confidence.")
-    
-    kwargs = {
-        "init"          : "nndsvda",
-        "solver"        : "cd",
-        "beta_loss"     : "frobenius",
-        "tol"           : 1e-4,
-        "max_iter"      : 10000,
-        "random_state"  : None,
-        "alpha_W"       : 0.0,
-        "alpha_H"       : "same",
-        "l1_ratio"      : 0.0,
-        "verbose"       : 0,
-        "shuffle"       : False
-    }
-    nmf = rp.analysis.decompose.NMF(n_components=n_components, **kwargs)
+
+    if nmf_config is None:
+        nmf_config = NmfConfig()
+    nmf = rp.analysis.decompose.NMF(**nmf_config.as_kwargs(n_components))
     
     # smoothing distorts potential baseline correction
     pipeline_nmf = rp.preprocessing.Pipeline([
