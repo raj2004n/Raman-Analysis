@@ -187,6 +187,11 @@ class RunManifest:
     config: dict = field(default_factory=dict)
 
     def to_json(self):
+        """The manifest as the text of a ``run.json``.
+
+        Every field is written, including the ones still holding their default, so the
+        file shows which facts the run recorded and which it never had.
+        """
         return json.dumps(asdict(self), indent=2)
 
     @classmethod

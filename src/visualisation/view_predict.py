@@ -46,6 +46,18 @@ def _hover_annotation(row, col, masked_labels, confidence_map, predicted_top5_ma
 
 
 def show_prediction_map(run_path, path, x, y, confidence_threshold=0.80, save_path=None):
+    """Draws a map of the predicted mineral per pixel, with a legend and hover text.
+
+    Args:
+        run_path: The run directory holding the trained model and the settings it was
+            trained on.
+        path: Directory holding the .txt spectra.
+        x, y: Rows and columns of the grid.
+        confidence_threshold (float): Predictions below this are drawn as ``Unknown``
+            rather than as a mineral.
+        save_path (str, optional): Where to write the figure. Nothing is written when it
+            is None. The window opens either way.
+    """
     apply_theme()
 
     predicted_labels_map, predicted_top5_map = predict(run_path, path, x, y)
@@ -108,6 +120,12 @@ def show_prediction_map(run_path, path, x, y, confidence_threshold=0.80, save_pa
     annot.set_visible(False)
 
     def on_hover(event):
+        """Shows the detail for the pixel under the pointer, and hides it off the axes.
+
+        The pointer position is turned into a pixel here, and ``_hover_annotation``
+        tests it against the map before indexing: rounding puts the far edge of the map
+        exactly on ``width`` or ``length``, one past the last pixel.
+        """
         if event.inaxes == ax and event.xdata is not None and event.ydata is not None:
             row = int(round(event.ydata))
             col = int(round(event.xdata))

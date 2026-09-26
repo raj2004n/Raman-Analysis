@@ -61,6 +61,26 @@ class PhaseEstimate:
 
 
 def _n_by_pca(hsi_cube):
+    """Estimates the number of phases from the shape of the principal components.
+
+    Two readings of one PCA are taken. The first is how many components it takes to
+    describe 80% of the variance, which is a plain fraction of the total. The second
+    looks for the knee in the explained variance of the first ten components, the point
+    where adding another component stops buying much, which suits a set of phases more
+    than the fraction does when the phases differ in strength.
+
+    The bands are scaled to unit variance before the PCA, so the estimate does not turn
+    on the units a band happens to be measured in.
+
+    Args:
+        hsi_cube: The cube to estimate from, with ``spectral_data`` shaped
+            (rows, columns, bands).
+
+    Returns:
+        tuple: The 80% variance count, and the knee, which is None when the variance
+        curve has no knee at all. A caller reads None as this method having nothing to
+        contribute rather than as an estimate of zero.
+    """
     # get matrix containing spectral data
     X = hsi_cube.spectral_data
 
@@ -97,6 +117,24 @@ def _n_by_pca(hsi_cube):
     return n_80, n_elbow
 
 def _n_by_hfc(hsi_cube):
+    """Estimates the number of phases by the Hysime, or HFC, virtual dimensionality test.
+
+    The test asks how many of the cube's eigenvalues stand out from the noise, at each
+    of several false alarm rates, and returns one count per rate. The rates are asked for
+    across several orders of magnitude because the test's answer moves with the rate,
+    and the estimator picks between the counts rather than being handed one number that
+    hides how firm it is.
+
+    The cube is scaled to 0 to 1 band by band first, since the test compares the spread
+    of one band against the noise in it and would otherwise be reading the units.
+
+    Args:
+        hsi_cube: The cube to estimate from, with ``spectral_data`` shaped
+            (rows, columns, bands).
+
+    Returns:
+        list[int]: One count per false alarm rate, in the order the rates were given.
+    """
     # get spectral matrix
     X = hsi_cube.spectral_data
     # sclae spectral matrix

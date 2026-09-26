@@ -24,6 +24,12 @@ HIGHLIGHT = "#F78166"
 UI_BG     = "#30363D"
 
 def apply_theme():
+    """Sets matplotlib's global style to the dark palette the viewers are drawn in.
+
+    This writes ``rcParams``, which is shared by everything in the process, so it is
+    called by a viewer when it opens rather than at import: a script that imported this
+    package to analyse something should not find its own figures recoloured.
+    """
     mpl.rcParams.update({
         "figure.facecolor": BG,
         "figure.edgecolor": BG,

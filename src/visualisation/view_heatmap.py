@@ -31,6 +31,29 @@ def _apply_intensity_mask(image, i_min, i_max):
 
 
 def query_rolling_auc(cumulative_cube, raman_shift, window_width_cm):
+    """The area under every spectrum over a window, for every position of that window.
+
+    The window slides one band at a time. Its width arrives in cm⁻¹ and becomes a number
+    of bands, never fewer than two, so a window narrower than the spacing between bands
+    still spans two of them. Each window's area is then one subtraction between two bands
+    of the cumulative cube rather than a fresh integral.
+
+    Args:
+        cumulative_cube: The cumulative integral of each spectrum, shaped
+            (rows, columns, bands).
+        raman_shift: The wavenumbers, one per band.
+        window_width_cm (float): The window width in cm⁻¹.
+
+    Returns:
+        tuple: The areas, shaped (rows, columns, bands - step); the wavenumber each
+        window starts at; the wavenumber each ends at; and the number of bands the window
+        spans, which the viewer keeps to describe the window it is showing.
+
+    Raises:
+        ValueError: The window is wider than the spectral range, so no position of it
+            falls inside the data. The message gives both widths, since the caller's way
+            out is to ask for a smaller window.
+    """
     spectral_axis = np.asarray(raman_shift) # as array for future operations
     n = len(spectral_axis)
     mean_step = np.mean(np.diff(spectral_axis))
@@ -100,6 +123,16 @@ def show_hsi_viewer(cube):
     }
 
     def _recompute_auc(window_width_cm):
+        """Rebuilds the windowed cube, and the intensity range that describes it.
+
+        Args:
+            window_width_cm (float): The width the window slider is now on.
+
+        Raises:
+            ValueError: The window is wider than the spectral range, from
+                ``query_rolling_auc``. Nothing is stored in that case, so the viewer is
+                left holding the cube and the scale it had.
+        """
         auc_cube, band_starts, band_ends, idx_step = query_rolling_auc(
             cube.cube, raman_shift_arr, window_width_cm
         )
@@ -255,6 +288,12 @@ def show_hsi_viewer(cube):
 
     # helpers
     def _get_image_range():
+        """The intensity range to draw in, in plain intensity units.
+
+        The slider carries ln values while the ln scale is on, so its ends are turned
+        back into intensities by undoing the log and the correction that was added before
+        it. The image and the colour bar are in plain units either way.
+        """
         v_min, v_max = intensity_slider.val
         if state["ln_scale"]:
             return np.exp(v_min) - state["correction"], np.exp(v_max) - state["correction"]
@@ -273,6 +312,13 @@ def show_hsi_viewer(cube):
 
     # callbacks
     def update(_val):
+        """Draws the band the position slider is on, and the spectrum of the chosen pixel.
+
+        Both the slider and the text box that names a pixel call this, so the argument
+        matplotlib passes is ignored and the current contents of both widgets are read
+        instead. A text box holding something that is not a number leaves the display as
+        it was, so a half-typed pixel number does not blank the spectrum.
+        """
         index = int(pos_slider.val)
         index = min(index, state["auc_cube"].shape[-1] - 1)
 
@@ -342,11 +388,25 @@ def show_hsi_viewer(cube):
         update(None)
 
     def on_resize(_event):
+        """Retakes the copy of the canvas that ``update`` blits over.
+
+        Redrawing only the axes on top of a saved copy of the canvas is what keeps a
+        slider drag from redrawing the whole figure, and the copy is only valid at the
+        size it was taken at. A resize redraws the canvas, so the stale copy has to be
+        replaced or the saved region no longer matches the figure under it.
+        """
         nonlocal background
         fig.canvas.draw()
         background = fig.canvas.copy_from_bbox(fig.bbox)
 
     def on_scale_toggle(_event):
+        """Switches the intensity slider between plain and ln scale.
+
+        The two ends are converted so the same intensities stay in view across the
+        switch, and the slider's bounds become the range that belongs to the scale it is
+        now on. The ln scale is there because the areas span orders of magnitude; the
+        correction is what keeps an area of zero or below off the log.
+        """
         v_min_cur, v_max_cur = intensity_slider.val
         state["ln_scale"] = not state["ln_scale"]
 
@@ -371,6 +431,12 @@ def show_hsi_viewer(cube):
         fig.canvas.draw_idle()
 
     def on_hover(event):
+        """Names the pixel the pointer is over, and clears the name off the image.
+
+        The label is only rewritten when its text changes, because a redraw per mouse
+        move would otherwise be paid for on every pixel the pointer crosses while it
+        stays within one pixel of the image.
+        """
         new_text = ""
         if event.inaxes == ax_image:
             new_text = f"Pixel {pixel_at(event.xdata, event.ydata, cube.pixel_map)}"
@@ -379,6 +445,12 @@ def show_hsi_viewer(cube):
             fig.canvas.draw_idle()
 
     def on_click(event):
+        """Moves the spectrum to the pixel that was double-clicked on the image.
+
+        A single click does nothing: panning and zooming the image also send click
+        events, and following those would move the spectrum off the pixel being looked
+        at. The position slider is left alone, so the band on screen does not change.
+        """
         if event.inaxes != ax_image or not event.dblclick:
             return
         pixel = pixel_at(event.xdata, event.ydata, cube.pixel_map)

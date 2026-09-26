@@ -18,6 +18,13 @@ class RamanGrid:
     _NUMBER = re.compile(r"\[(\d+)\]")
 
     def __init__(self, path, x, y):
+        """Notes the directory and the grid size, and reads nothing.
+
+        Args:
+            path (str or Path): The directory holding the map's files. ``~`` is
+                expanded, so a path from a shell prompt can be passed through.
+            x, y (int): The rows and columns the files are laid out on.
+        """
         self.path = Path(path).expanduser()
         self.x = x
         self.y = y
@@ -107,15 +114,20 @@ class RamanGrid:
         return [file for _, file in entries]
 
     def _step(self, cur_x, cur_y, step):
-        """_summary_
+        """The position after one move along a row, turning round at the end of it.
+
+        The walk goes along a row in one direction, steps up to the next row when it
+        reaches the boundary, and comes back along that row in the other direction, so
+        every position is visited exactly once.
 
         Args:
-            cur_x (_type_): _description_
-            cur_y (_type_): _description_
-            step (_type_): _description_
+            cur_x (int): The row the walk is on.
+            cur_y (int): The column it is at within that row.
+            step (int): 1 while the walk is heading towards increasing columns, -1 while
+                it is heading back.
 
         Returns:
-            _type_: _description_
+            tuple: The next row, column and direction, in that order.
         """
         if cur_y == self.y - 1 and step != -1: # on right boundary
             cur_x -= 1 # step up
@@ -128,10 +140,14 @@ class RamanGrid:
         return cur_x, cur_y, step
 
     def traverse(self):
-        """Generator to yield one position at each call.
+        """Walks the map's files in the order the grid was laid out in.
+
+        The order is boustrophedon: from the last row index down to the first, along a
+        row one way and back along the next, which is the order the pixel numbers were
+        assigned in.
 
         Yields:
-            _type_: _description_
+            tuple: The file, and the row and column it belongs at, in that order.
         """
         files = self.get_sorted_files()
         # initial position and step direction

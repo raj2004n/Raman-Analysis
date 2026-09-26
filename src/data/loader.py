@@ -53,18 +53,38 @@ def load_CNN_data(path="~/Code/Data_SH/poor_unoriented"):
     return spectra, metadata
 
 def read_spectrum(file):
-    """Reads the spectrum from the passed in file.
+    """Reads one exported spectrum.
+
+    The files hold two tab-separated columns, one row per band, with no header: the
+    wavenumber and the intensity.
 
     Args:
-        file : _description_
+        file (str or Path): The ``.txt`` file to read.
 
     Returns:
-        _type_: _description_
+        tuple: The wavenumbers as a list, and the intensities as an array.
     """
-    df = pd.read_csv(file, sep='\t', names=['raman_shift', 'intensity'], header=None, usecols=[0, 1])    
+    df = pd.read_csv(file, sep='\t', names=['raman_shift', 'intensity'], header=None, usecols=[0, 1])
     return df['raman_shift'].tolist(), df['intensity'].values
 
 def build_pipeline(pipeline_id, normalisation_pixelwise=True, fingerprint=False):
+    """The preprocessing protocol a pipeline id names.
+
+    The ids are the ones the command line offers, and the protocols are the three from
+    Georgiev et al. (2023).
+
+    Args:
+        pipeline_id (int): 0 for no preprocessing, 1 to 3 for protocols P1 to P3.
+        normalisation_pixelwise (bool): Whether normalisation is applied to each pixel
+            separately rather than to the cube as a whole.
+        fingerprint (bool): Whether the protocol crops to the fingerprint region.
+
+    Returns:
+        ramanspy Pipeline or None: The protocol, or None for an id asking for none.
+
+    Raises:
+        ValueError: The id names no protocol.
+    """
     if pipeline_id == 0:
         return None
     elif pipeline_id == 1:
@@ -75,14 +95,45 @@ def build_pipeline(pipeline_id, normalisation_pixelwise=True, fingerprint=False)
         return rp.preprocessing.protocols.georgiev2023_P3(normalisation_pixelwise, fingerprint)
     else:
         raise ValueError(f"Unknown pipeline id: {pipeline_id}")
-    
+
 def crop_axis(spectral_axis, start=None, end=None):
+    """Narrows a wavenumber axis to a range, and says which bands that leaves.
+
+    A bound does not have to be a wavenumber the axis holds: each is found by binary
+    search, so a bound lying between two bands cuts at the band above it.
+
+    Args:
+        spectral_axis: The wavenumbers, one per band.
+        start, end: The bounds to keep. Either may be None, which keeps that side whole.
+
+    Returns:
+        tuple: The cropped axis, and the start and end indexes it was taken from. The
+        end index is exclusive, so the indexes crop a matching intensity array, which is
+        what the callers need them for.
+    """
     spectral_axis = np.array(spectral_axis)
     start_idx = np.searchsorted(spectral_axis, start) if start is not None else 0
     end_idx = np.searchsorted(spectral_axis, end) if end is not None else len(spectral_axis)
     return spectral_axis[start_idx:end_idx], start_idx, end_idx
 
 def get_raw_hsi_cube(path, x, y, start=None, end=None):
+    """Loads the grid as a cube of intensities, with no preprocessing applied.
+
+    The wavenumber axis is read from one file and taken to be the same in all of them,
+    which is how the exported files are written. This is the cube the phase
+    decomposition viewer unmixes, and what it unmixes it from before any pipeline.
+
+    Args:
+        path: Directory holding the .txt spectra.
+        x, y: Rows and columns of the grid.
+        start, end: Wavenumber bounds to crop to. Either may be None.
+
+    Returns:
+        ramanspy SpectralImage: The intensities as a cube of shape
+        (rows, columns, bands) on the cropped axis.
+    """
+    # x is the row count and y the column count, which is the order the grid is
+    # addressed in everywhere below: (row, column), never (column, row).
     grid = RamanGrid(path, x, y)
 
     # read spectral axis from first file only, same across all so its fine

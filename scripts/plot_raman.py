@@ -84,6 +84,17 @@ def _input(prompt_str=""):
     return input(prompt_str).strip()
 
 def prompt_args():
+    """Asks for the map directory and its grid size, then for the mode and its settings.
+
+    The directory is checked against the grid size before the mode is asked for, so a
+    mistake in the path costs one answer rather than a whole dialogue. The check is the
+    grid's own file discovery, which means the count reported here is the count the
+    loaders will read.
+
+    Returns:
+        tuple: The path, the rows, the columns, the mode name, and the mode's settings
+        as the dictionary its prompt returned.
+    """
     print("\nEnter path, grid rows and grid columns (or '?' for help):")
     print("e.g. ~/Code/Data_SH/SB008 10 13")
     while True:
@@ -132,6 +143,12 @@ def prompt_args():
     return path, x, y, mode, kwargs
 
 def prompt_mode():
+    """Asks which of the viewers to open.
+
+    Returns:
+        str: The mode name the rest of the dialogue goes by: 'heatmap', 'phase_decomp'
+        or 'predict'.
+    """
     print("\nSelect mode (or '?' for help):")
     print("  [1] Heatmap")
     print("  [2] Unmixing")
@@ -147,6 +164,13 @@ def prompt_mode():
         print("Invalid choice, please enter 1, 2, or 3.")
 
 def prompt_heatmap_args():
+    """Asks for the preprocessing protocol, and the wavenumber range to plot.
+
+    Returns:
+        dict: ``pipeline_id`` as the protocol id the loader takes, and ``start`` and
+        ``end`` as the range bounds, each of which is None when the question was left
+        empty, meaning that side of the range is kept whole.
+    """
     print("\nPipeline? [0] None  [1] P1  [2] P2  [3] P3 (default: 0, or '?' for help)")
     while True:
         pipeline_id = _input("> ") or "0"
@@ -188,6 +212,13 @@ def prompt_heatmap_args():
     }
 
 def prompt_phase_decomp_args():
+    """Asks how many phases to unmix into, and the wavenumber range to unmix.
+
+    Returns:
+        dict: ``phase_number``, which is -1 to have the number estimated rather than
+        given, and ``start`` and ``end`` as the range bounds, each None when the question
+        was left empty.
+    """
     print("\nNumber of phases (-1 to estimate automatically, or '?' for help)")
     while True:
         phase_number = _input("> ") or "-1"
@@ -262,6 +293,15 @@ def prompt_run_dir():
 
 
 def prompt_predict_args():
+    """Asks which trained run to predict with, the confidence threshold, and where to save.
+
+    The run is asked for first, because it is what the settings of the other two are read
+    against.
+
+    Returns:
+        dict: ``run_path`` as a directory path, ``confidence_threshold`` below which a
+        pixel reads as 'Unknown', and ``save_path`` for the figure.
+    """
     run_path = prompt_run_dir()
 
     print("\nConfidence threshold (default: 0.80, or '?' for help)")
