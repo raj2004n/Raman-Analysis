@@ -10,7 +10,7 @@ import argparse
 
 import numpy as np
 from keras.callbacks import EarlyStopping
-from keras.utils import plot_model, to_categorical
+from keras.utils import plot_model, set_random_seed, to_categorical
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -35,11 +35,17 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
     run_name = cfg.name or runs.new_run_name()
     run_dir = runs.run_directory(run_name)
 
+    # The one source of randomness for the data side: this generator decides which
+    # spectrum each class holds out and how the rest are augmented. It is a local
+    # generator rather than a seed set on the global one, so the run is repeatable from
+    # its config no matter what else in the process draws random numbers.
+    rng = np.random.default_rng(cfg.seed)
+
     spectra_list, metadata = load_CNN_data(cfg.dataset)
 
     y_data = [m['##NAMES'].split(',')[0].strip() for m in metadata]
 
-    train_index, test_index = leave_one_out_split(y_data)
+    train_index, test_index = leave_one_out_split(y_data, rng)
 
     # one hot encoding
     le = LabelEncoder()
@@ -62,8 +68,13 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
     x_train = standardise_data(spectra_train, target_length=cfg.input_size, x_min=cfg.x_min, x_max=cfg.x_max)
     x_test = standardise_data(spectra_test, target_length=cfg.input_size, x_min=cfg.x_min, x_max=cfg.x_max)
 
-    x_all, y_all_labels = build_augmented_dataset(x_train, y_train_labels, cfg.n_shift, cfg.n_noise)
+    x_all, y_all_labels = build_augmented_dataset(x_train, y_train_labels, cfg.n_shift, cfg.n_noise, rng)
 
+    # The network's initial weights are drawn when the layers are built, and Keras takes
+    # those draws from its own global state, so this is the one setting a run cannot pass
+    # down as an argument. Seeding it here, immediately before the model is built, is what
+    # makes two runs of the same config produce the same weights.
+    set_random_seed(cfg.seed)
     model = CNN_Model(num_classes, cfg.input_size)
     model.summary()
     plot_model(model, to_file=run_dir / runs.MODEL_PLOT_NAME, show_shapes=True)
@@ -139,6 +150,12 @@ def parse_args(argv=None):
     )
     parser.add_argument("--n-shift", type=int, default=TrainConfig.n_shift, help="shift augmentations per spectrum.")
     parser.add_argument("--n-noise", type=int, default=TrainConfig.n_noise, help="noise augmentations per spectrum.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=TrainConfig.seed,
+        help="seed for the held-out split, the augmentations and the initial weights.",
+    )
     return parser.parse_args(argv)
 
 
@@ -154,6 +171,7 @@ def main(argv=None):
         patience=args.patience,
         n_shift=args.n_shift,
         n_noise=args.n_noise,
+        seed=args.seed,
         name=args.name,
     ))
 

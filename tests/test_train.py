@@ -55,6 +55,7 @@ def test_the_command_line_defaults_are_the_config_defaults():
     assert args.patience == TrainConfig.patience
     assert args.n_shift == TrainConfig.n_shift
     assert args.n_noise == TrainConfig.n_noise
+    assert args.seed == TrainConfig.seed
     assert args.name is None
 
 
@@ -62,13 +63,15 @@ def test_the_command_line_can_over_rule_every_default():
     """A second dataset and a different axis are arguments, which is the point of the config."""
     args = train_module.parse_args(
         ["--dataset", OTHER_DATASET, "--input-size", "1200", "--x-min", "100", "--x-max", "900",
-         "--epochs", "5", "--patience", "2", "--n-shift", "0", "--n-noise", "0", "--name", "trial"]
+         "--epochs", "5", "--patience", "2", "--n-shift", "0", "--n-noise", "0", "--seed", "4",
+         "--name", "trial"]
     )
 
     assert args.dataset == OTHER_DATASET
     assert (args.input_size, args.x_min, args.x_max) == (1200, 100.0, 900.0)
     assert (args.epochs, args.patience) == (5, 2)
     assert (args.n_shift, args.n_noise) == (0, 0)
+    assert args.seed == 4
     assert args.name == "trial"
 
 
@@ -118,9 +121,22 @@ def training(monkeypatch):
 
     monkeypatch.setattr(train_module, "standardise_data", fake_standardise)
 
-    monkeypatch.setattr(train_module, "build_augmented_dataset", lambda x, y, n_shift, n_noise: (
-        recorded.setdefault("augment", []).append({"n_shift": n_shift, "n_noise": n_noise}) or (x, y)
-    ))
+    real_split = train_module.leave_one_out_split
+
+    def fake_split(y_data, rng):
+        recorded["rng"] = rng
+        recorded["split"] = real_split(y_data, rng)
+        return recorded["split"]
+
+    monkeypatch.setattr(train_module, "leave_one_out_split", fake_split)
+
+    def fake_augment(x, y, n_shift, n_noise, rng):
+        recorded["augmentation_rng"] = rng
+        recorded.setdefault("augment", []).append({"n_shift": n_shift, "n_noise": n_noise})
+        return x, y
+
+    monkeypatch.setattr(train_module, "build_augmented_dataset", fake_augment)
+    monkeypatch.setattr(train_module, "set_random_seed", lambda seed: recorded.setdefault("seeds", []).append(seed))
     monkeypatch.setattr(train_module, "plot_model", lambda *a, **k: None)
     monkeypatch.setattr(train_module, "show_results", lambda *a, **k: None)
 
@@ -186,3 +202,47 @@ def test_the_score_is_measured_on_the_held_out_spectra(training):
     assert scored[0]["verbose"] == 0, "the score is read, not printed a second time"
 
 
+def test_one_seeded_generator_carries_the_whole_data_side(training):
+    """The split and the augmentation draw from the same generator, built from the config.
+
+    Two generators seeded the same way would give the same numbers here, but the run would
+    then be splitting and augmenting from separate streams while the record named one seed.
+    """
+    train_module.train(replace(TrainConfig(), dataset=OTHER_DATASET, name="trial", seed=99))
+
+    rng = training["rng"]
+    assert isinstance(rng, np.random.Generator)
+    assert training["augmentation_rng"] is rng, "one stream, not two that happen to agree"
+
+
+def test_the_held_out_spectra_follow_the_config_seed(training):
+    """The same config holds out the same spectra; a different seed holds out others.
+
+    This is the draw that decides which spectra the reported accuracy was measured on, so
+    it is the one a replay has to reproduce.
+    """
+    cfg = replace(TrainConfig(), dataset=OTHER_DATASET, name="trial", seed=99)
+
+    train_module.train(cfg)
+    first = tuple(training["split"][1])
+    train_module.train(cfg)
+    again = tuple(training["split"][1])
+
+    splits = set()
+    for seed in range(1, 7):
+        train_module.train(replace(cfg, seed=seed))
+        splits.add(tuple(training["split"][1]))
+
+    assert first == again
+    assert len(splits) > 1, "the fixture has more than one possible split, so seeds must differ"
+
+
+def test_the_framework_seed_is_the_config_seed(training):
+    """Keras draws the initial weights from its own global state, so it is seeded too.
+
+    Without this, two runs of the same config would share a dataset and a split and still
+    produce different models, which is the case the identity check exists to rule out.
+    """
+    train_module.train(replace(TrainConfig(), dataset=OTHER_DATASET, name="trial", seed=4))
+
+    assert training["seeds"] == [4]
