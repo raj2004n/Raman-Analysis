@@ -9,11 +9,14 @@ if the length and the wavenumber range are read from the run's manifest.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import keras
 import numpy as np
 import pytest
 from sklearn.preprocessing import LabelEncoder
 
+from src.config import TrainConfig
 from src.cnn import runs
 from src.cnn.predict import predict
 from tests import synthetic
@@ -34,24 +37,20 @@ def _model_for(axis, num_classes=len(LABELS)):
     return model
 
 
-def _run_for(axis, tmp_path, name="fixture", **overrides):
-    """A saved run trained on the fixture's axis, with any manifest field overridden."""
-    settings = {
-        "x_min": float(np.min(axis)),
-        "x_max": float(np.max(axis)),
-    }
-    settings.update(overrides)
+def _run_for(axis, dataset, tmp_path, name="fixture", **overrides):
+    """A saved run trained on the fixture's axis, with any config field overridden."""
+    config = replace(
+        TrainConfig(
+            dataset=str(dataset),
+            input_size=axis.size,
+            x_min=float(np.min(axis)),
+            x_max=float(np.max(axis)),
+        ),
+        **overrides,
+    )
 
     directory = runs.run_directory(name, root=tmp_path)
-    runs.save_run(
-        directory,
-        name=name,
-        model=_model_for(axis),
-        encoder=LabelEncoder().fit(LABELS),
-        input_size=axis.size,
-        num_classes=len(LABELS),
-        **settings,
-    )
+    runs.save_run(directory, config=config, model=_model_for(axis), encoder=LabelEncoder().fit(LABELS))
     return directory
 
 
@@ -62,7 +61,7 @@ def axis():
 
 def test_predict_reads_its_length_from_the_manifest(tmp_path, grid_dir, axis):
     """The settings come from run.json, so a model of the wrong length cannot be used."""
-    run_dir = _run_for(axis, tmp_path)
+    run_dir = _run_for(axis, grid_dir, tmp_path)
 
     labels, top5 = predict(run_dir, grid_dir, synthetic.ROWS, synthetic.COLS)
 
@@ -82,7 +81,7 @@ def test_predict_reads_its_length_from_the_manifest(tmp_path, grid_dir, axis):
 
 def test_predict_refuses_a_run_trained_outside_the_measured_range(tmp_path, grid_dir, axis):
     """Padding a spectrum with zeros to reach the training range changes the prediction."""
-    run_dir = _run_for(axis, tmp_path, x_max=float(np.max(axis)) + 200.0)
+    run_dir = _run_for(axis, grid_dir, tmp_path, x_max=float(np.max(axis)) + 200.0)
 
     with pytest.raises(ValueError, match="pad the spectrum with zeros"):
         predict(run_dir, grid_dir, synthetic.ROWS, synthetic.COLS)

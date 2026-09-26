@@ -27,7 +27,7 @@ import ramanspy as rp
 
 from src.analysis import phase_number_est
 from src.analysis.phase_number_est import MethodEstimate
-from src.config import EstimatorConfig, NmfConfig
+from src.config import PROJECT_SEED, EstimatorConfig, NmfConfig
 from tests import synthetic
 
 N_COMPONENTS = 3
@@ -352,10 +352,11 @@ def test_nmf_phase_spectra_are_pinned(raw_cube, golden):
     Running the decomposition directly rather than through the viewer keeps the
     figures out of it; the viewer passing its config on is covered separately.
 
-    A note on reproducibility: ``random_state`` is ``None``, but the ``nndsvda``
-    initialisation is deterministic, so this path is stable in practice. That is worth
-    knowing, because it means a missing seed is not what makes this particular result
-    hard to reproduce.
+    A note on reproducibility: ``random_state`` is the project seed, and this snapshot
+    is the same as it was when that setting was ``None``. The ``nndsvda``
+    initialisation is computed from the data rather than drawn, so the seed makes an
+    otherwise open setting explicit without changing what is decomposed. That was
+    checked rather than assumed, which is why the value is pinned here.
     """
     settings = NmfConfig().as_kwargs(N_COMPONENTS)
     pipeline = rp.preprocessing.Pipeline(
@@ -379,6 +380,11 @@ def test_the_nmf_config_holds_the_settings_the_viewer_used_to_inline():
 
     Pinned as a whole mapping rather than key by key, so a renamed or dropped setting
     is a failure here instead of a kwarg that silently stops being passed.
+
+    ``random_state`` is the project seed rather than the ``None`` the viewer passed. The
+    decomposition is unaffected either way with this initialisation, which is why the
+    pinned end members above did not move; what changed is that the setting is now
+    written down, so the seed a result came from is not something the process decides.
     """
     assert NmfConfig().as_kwargs(3) == {
         "n_components": 3,
@@ -387,7 +393,7 @@ def test_the_nmf_config_holds_the_settings_the_viewer_used_to_inline():
         "beta_loss": "frobenius",
         "tol": 1e-4,
         "max_iter": 10000,
-        "random_state": None,
+        "random_state": PROJECT_SEED,
         "alpha_W": 0.0,
         "alpha_H": "same",
         "l1_ratio": 0.0,

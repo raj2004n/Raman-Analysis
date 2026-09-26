@@ -77,6 +77,7 @@ class _FakeModel:
 
     def __init__(self):
         self.fitted = {}
+        self.scored = []
 
     def summary(self):
         return None
@@ -84,6 +85,10 @@ class _FakeModel:
     def fit(self, x, y, **kwargs):
         self.fitted = {"x": x, "y": y, **kwargs}
         return "history"
+
+    def evaluate(self, x, y, **kwargs):
+        self.scored.append({"x": x, "y": y, **kwargs})
+        return [0.25, 0.75]
 
 
 @pytest.fixture
@@ -112,6 +117,7 @@ def training(monkeypatch):
         return np.zeros((len(spectra), target_length, 1))
 
     monkeypatch.setattr(train_module, "standardise_data", fake_standardise)
+
     monkeypatch.setattr(train_module, "build_augmented_dataset", lambda x, y, n_shift, n_noise: (
         recorded.setdefault("augment", []).append({"n_shift": n_shift, "n_noise": n_noise}) or (x, y)
     ))
@@ -120,7 +126,7 @@ def training(monkeypatch):
 
     def fake_save_run(directory, **kwargs):
         recorded["save_run"] = {"directory": directory, **kwargs}
-        return type("Manifest", (), {"name": kwargs.get("name", "run")})()
+        return type("Manifest", (), {"name": kwargs["config"].name or "run"})()
 
     monkeypatch.setattr(train_module.runs, "save_run", fake_save_run)
     monkeypatch.setattr(train_module.runs, "run_directory", lambda name, root=None: recorded.setdefault(
@@ -147,15 +153,36 @@ def test_a_run_takes_its_dataset_and_axis_from_the_config(training):
 
 
 def test_a_run_records_the_axis_and_length_it_trained_on(training):
-    """The manifest has to carry the length and the range, since a prediction must reproduce both."""
+    """The manifest has to carry the length and the range, since a prediction must reproduce both.
+
+    Everything the record is built from is read out of the config the run was given, so
+    these assertions are about the same object rather than about a list of arguments that
+    could drift from it.
+    """
     cfg = replace(TrainConfig(), dataset=OTHER_DATASET, input_size=1200,
                   x_min=OTHER_RANGE[0], x_max=OTHER_RANGE[1], name="trial")
 
     manifest = train_module.train(cfg)
 
     saved = training["save_run"]
-    assert saved["name"] == "trial"
-    assert saved["input_size"] == 1200
-    assert (saved["x_min"], saved["x_max"]) == OTHER_RANGE
-    assert saved["num_classes"] == 2, "two named minerals in the fixture"
+    assert saved["config"] is cfg
+    assert saved["config"].name == "trial"
+    assert saved["config"].input_size == 1200
+    assert (saved["config"].x_min, saved["config"].x_max) == OTHER_RANGE
+    assert saved["metrics"] == {"test_loss": 0.25, "test_accuracy": 0.75}, (
+        "the score has to be measured on the held-out spectra and travel with the run"
+    )
     assert manifest is not None, "the manifest of the run is what train returns"
+
+
+def test_the_score_is_measured_on_the_held_out_spectra(training):
+    """The accuracy a report quotes is the model's on the spectra it did not train on."""
+    train_module.train(replace(TrainConfig(), dataset=OTHER_DATASET, name="trial"))
+
+    scored = training["model"].scored
+    assert len(scored) == 1, "one evaluation per run, on the test split"
+    assert scored[0]["x"].shape[0] == 2, "the two spectra held out of the four-fixture"
+    assert scored[0]["y"].shape[0] == 2
+    assert scored[0]["verbose"] == 0, "the score is read, not printed a second time"
+
+

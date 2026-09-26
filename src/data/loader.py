@@ -35,8 +35,14 @@ class Cube:
 def load_CNN_data(path="~/Code/Data_SH/poor_unoriented"):
     """Loads Raman Spectra dataset from RRUFF for training the CNN model.
 
+    The spectra come back in the order the files are read, which is the order
+    ``glob`` returns them in rather than a sorted one. That order reaches the
+    training split, since the split is over positions rather than over names, so a
+    replay has to reproduce it. The run record keeps a digest of it for that reason,
+    and ``runs.dataset_order_digest`` computes the same list the same way.
+
     Args:
-        path (str, optional): File path for the dataset. 
+        path (str, optional): File path for the dataset.
             Defaults to "~/Code/Data_SH/poor_unoriented".
 
     Returns:

@@ -28,7 +28,9 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
     One class is held out per class by ``leave_one_out_split``, the rest are standardised
     onto ``cfg.input_size`` points between ``cfg.x_min`` and ``cfg.x_max``, and the
     training half is augmented before fitting. The run directory records the input size
-    and the wavenumber range, because a prediction has to reproduce both.
+    and the wavenumber range, because a prediction has to reproduce both, and it records
+    the seed, the dataset digests and the versions the run used, so the accuracy it
+    reports can be traced back to a run that can be repeated.
     """
     run_name = cfg.name or runs.new_run_name()
     run_dir = runs.run_directory(run_name)
@@ -83,17 +85,20 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
         class_weight=class_weight_dict,
         )
 
-    # one directory per run, so the input length and the wavenumber range travel with
-    # the model instead of having to be remembered when predicting
+    # What the fitted model scores on the spectra that were held out. This is the
+    # number a report quotes, so it is measured here and written into the run's own
+    # record, where it stays attached to the seed and the data that produced it.
+    test_loss, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
+    print(f"Held-out accuracy: {test_accuracy:.4f} over {len(y_test)} spectra")
+
+    # one directory per run, so the settings, the seed and the dataset travel with the
+    # model instead of having to be remembered when predicting or when defending a number
     manifest = runs.save_run(
         run_dir,
-        name=run_name,
+        config=cfg,
         model=model,
         encoder=le,
-        input_size=cfg.input_size,
-        num_classes=num_classes,
-        x_min=cfg.x_min,
-        x_max=cfg.x_max,
+        metrics={"test_loss": float(test_loss), "test_accuracy": float(test_accuracy)},
     )
     print(f"Wrote run '{manifest.name}' to {run_dir}")
 

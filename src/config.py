@@ -8,6 +8,13 @@ inlined, so constructing the default object changes nothing.
 
 from dataclasses import dataclass, fields
 
+#: The seed the configs here start from. Training and decomposition are separate jobs, so
+#: either can be pointed somewhere else, but a number quoted from one of them is
+#: defensible for the same reason as a number from the other: the run that produced it can
+#: be repeated. A fixed value rather than None, since None means the choice depends on the
+#: process rather than on the config.
+PROJECT_SEED = 20260924
+
 
 @dataclass(frozen=True)
 class NmfConfig:
@@ -17,10 +24,10 @@ class NmfConfig:
     because it is decided per call: it comes from the caller, or from the phase
     estimator when the caller does not know it.
 
-    ``random_state`` is ``None`` here, which is what the decomposition used when the
-    settings were inline. It is not the source of run-to-run variation in practice,
-    because the ``nndsvda`` initialisation is deterministic; the seed that matters is
-    the one the split and the augmentation draw from.
+    ``random_state`` is fixed rather than left open so that every setting a decomposition
+    reads is readable in one place. With the ``nndsvda`` initialisation it does not change
+    the result: that initialisation is computed from the data, not drawn, so this is the
+    setting being explicit rather than the decomposition becoming repeatable.
     """
 
     init: str = "nndsvda"
@@ -28,7 +35,7 @@ class NmfConfig:
     beta_loss: str = "frobenius"
     tol: float = 1e-4
     max_iter: int = 10000
-    random_state: int | None = None
+    random_state: int | None = PROJECT_SEED
     alpha_W: float = 0.0
     alpha_H: float | str = "same"
     l1_ratio: float = 0.0
@@ -100,6 +107,12 @@ class TrainConfig:
     training script, so a second dataset meant editing the script. They are fields
     now, and the command line reads its defaults from them, so the two cannot drift
     apart: ``--input-size`` with no argument offers ``input_size``.
+
+    ``seed`` is the single seed a run draws from. It fixes which spectrum of each class
+    is held out, the augmentations applied to the rest, and the network's initial
+    weights, so a run is repeatable from the config alone. The default is a fixed
+    number rather than None, because a training run with no seed cannot be replayed and
+    the record of it would say nothing.
     """
 
     dataset: str = "~/Code/Data_SH/poor_unoriented"
@@ -110,5 +123,6 @@ class TrainConfig:
     patience: int = 20
     n_shift: int = 1
     n_noise: int = 1
+    seed: int = PROJECT_SEED
     name: str | None = None
 
