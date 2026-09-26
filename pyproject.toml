@@ -1,0 +1,41 @@
+[project]
+name = "raman-deep-learning"
+version = "0.1.0"
+description = "Analysis framework for Raman surface mapping data: spatial visualisation, distinct-spectra estimation, NMF unmixing and CNN compound prediction."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Raj Negi" }]
+dependencies = [
+    # Imported directly by src/, scripts/ or tests/:
+    "numpy>=2.0,<3",
+    "scipy>=1.13,<2",
+    "pandas>=2.2,<4",
+    "matplotlib>=3.8,<4",
+    "scikit-learn>=1.4,<2",
+    "ramanspy>=0.2.10,<0.3",
+    "kneed>=0.8,<0.9",
+    "pysptools>=0.15,<0.16",
+    "keras>=3.10,<4",
+    # Required without being imported: Keras draws its layers through whichever backend
+    # is installed, and train.py calls keras.utils.plot_model, which needs pydot.
+    "tensorflow>=2.20,<2.21",
+    "pydot>=4.0,<5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# notebooks/test_nn.py is the only file in the tree that imports torch. Keeping it out
+# of the list above keeps the CUDA wheels torch pulls in out of an ordinary install.
+notebooks = ["torch>=2.10"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# The installed packages are the framework and its entry points. tests/ and notebooks/
+# are run from the checkout and are not part of the distribution.
+include = ["src*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

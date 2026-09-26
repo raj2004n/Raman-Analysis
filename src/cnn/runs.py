@@ -48,7 +48,8 @@ RUNS_DIRNAME = "runs"
 #: Recorded one by one rather than as a full environment freeze: these are what a result
 #: depends on, and a few hundred transitive packages would bury them. ``scikit-learn``
 #: rather than ``sklearn`` because that is the distribution name, whatever the import is
-#: called.
+#: called. The names are the ones ``pyproject.toml`` declares, and a test asserts the two
+#: lists agree, so a dependency added to one cannot go unrecorded by the other.
 RECORDED_PACKAGES = (
     "keras",
     "tensorflow",
@@ -59,6 +60,8 @@ RECORDED_PACKAGES = (
     "kneed",
     "pysptools",
     "matplotlib",
+    "pandas",
+    "pydot",
 )
 
 #: Read size when digesting a dataset file. Large enough that the 81 MB dataset is a

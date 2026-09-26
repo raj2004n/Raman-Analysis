@@ -1,0 +1,16 @@
+# ramanspy normalises a spectrum by its area through numpy.trapz, which numpy removed in
+# 2.0 in favour of numpy.trapezoid. Every protocol that ends in area normalisation,
+# georgiev2023_P1 among them, raises AttributeError on a current numpy. 0.2.10 is the
+# newest ramanspy release, so there is no version to move to.
+# Applies to ramanspy 0.2.10.
+--- a/ramanspy/preprocessing/normalise.py
++++ b/ramanspy/preprocessing/normalise.py
+@@ -115,7 +115,7 @@
+ 
+ 
+ def _auc_norm(intensity_data, spectral_axis, *, pixelwise: bool):
+-    aucs = np.trapz(intensity_data, spectral_axis, axis=-1)[..., np.newaxis]
++    aucs = np.trapezoid(intensity_data, spectral_axis, axis=-1)[..., np.newaxis]
+ 
+     if pixelwise:
+         return intensity_data[..., :] / aucs, spectral_axis

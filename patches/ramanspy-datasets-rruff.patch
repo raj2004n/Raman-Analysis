@@ -1,0 +1,39 @@
+# RRUFF exports are not always UTF-8, and they do not all separate the wavenumber from
+# the intensity with a comma, so the library's reader fails on files that are otherwise
+# readable. The patch opens them as latin-1 and takes a line as data when it holds
+# exactly two numbers, passing over headings and stray lines rather than raising on
+# them. This is the reader src/data/loader.py reaches through ramanspy.datasets.rruff.
+# Applies to ramanspy 0.2.10.
+--- a/ramanspy/datasets.py
++++ b/ramanspy/datasets.py
+@@ -464,7 +464,7 @@
+         return _download_rruff(dataset)
+     else:
+         dir_ = dataset if folder is None else os.path.join(folder, dataset)
+-        files = [open(filename, 'r') for filename in glob.glob(f"{dir_}/*.txt")]
++        files = [open(filename, 'r', encoding='latin-1') for filename in glob.glob(f"{dir_}/*.txt")]
+         return _parse_rruff_files(files)
+ 
+ 
+@@ -498,10 +498,18 @@
+ 
+             metadata[property_] = data
+         else:
+-            axis_value, intensity_value = line.split(",")
++            values = line.replace(",", " ").split()
++            # A line is data only when it holds exactly two numbers, so a heading or a
++            # stray line in the file is passed over rather than raised on.
++            if len(values) != 2:
++                continue
++            try:
++                axis_value, intensity_value = (float(value) for value in values)
++            except ValueError:
++                continue
+ 
+-            intensities.append(float(intensity_value.strip()))
+-            shift_axis.append(float(axis_value.strip()))
++            intensities.append(intensity_value)
++            shift_axis.append(axis_value)
+ 
+     file.close()
+ 

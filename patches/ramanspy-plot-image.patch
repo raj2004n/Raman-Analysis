@@ -1,0 +1,36 @@
+# ramanspy's image plot builds its own white-to-colour gradient and offers no way to
+# choose a colormap, while the phase decomposition viewer asks for magma. The patch adds
+# a cmap parameter, used when one is given, and leaves the library's own gradient as the
+# default so every other image plot is drawn as before.
+# Applies to ramanspy 0.2.10.
+--- a/ramanspy/plot/plot.py
++++ b/ramanspy/plot/plot.py
+@@ -341,6 +341,7 @@
+         cbar: Union[bool, List[bool]] = True,
+         cbar_label: Union[str, List[str]] = "Peak intensity",
+         color=None,
++        cmap=None,
+         **plt_kwargs
+ ):
+     """
+@@ -367,6 +368,8 @@
+     color : Union[Matplotlib color, List[Matplotlib color]], optional
+         The color(s) to use for each plot. Default is ``None``, i.e. the default matplotlib's colormap will be used,
+         which is the ``veridis`` colormap.
++    cmap : Union[str, Matplotlib colormap], optional
++        The colormap to draw each image with. Default is ``None``, i.e. a white-to-``color`` gradient is built.
+     **plt_kwargs : keyword arguments, optional
+         Additional parameters. Will be passed to the `matplotlib.pyplot.imshow <https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.imshow.html>`_ method.
+         Each parameter can be given by single instance or as a list of instances for each plot.
+@@ -410,8 +413,9 @@
+     if ax is None:
+         fig, ax = plt.subplots()
+ 
+-    white = [1, 1, 1, 0]
+-    cmap = LinearSegmentedColormap.from_list('', [white, color])
++    if cmap is None:
++        white = [1, 1, 1, 0]
++        cmap = LinearSegmentedColormap.from_list('', [white, color])
+ 
+     im = ax.imshow(image, cmap=cmap, **plt_kwargs)
+ 

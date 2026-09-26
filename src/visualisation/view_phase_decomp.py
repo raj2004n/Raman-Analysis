@@ -1,11 +1,15 @@
+import logging
 import math
+
 import numpy as np
 import ramanspy as rp
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from .theme import apply_theme
 from src.analysis.phase_number_est import estimate_phase_number
 from src.config import NmfConfig
+
+logger = logging.getLogger(__name__)
 
 def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, nmf_config=None):
     """Unmixes the cube and shows the end-member spectra and their abundance maps.
@@ -59,7 +63,9 @@ def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, n
         label=[f"Spectra {i + 1}" for i in range(len(phases))]
     )
 
-    magma = cm.get_cmap("magma")
+    # matplotlib.colormaps rather than matplotlib.cm.get_cmap, which is removed in
+    # matplotlib 3.11. The registry is the documented replacement and has been since 3.5.
+    magma = colormaps["magma"]
     lines = ax.get_lines()
     colors = magma(np.linspace(0.15, 0.85, len(lines)))
 

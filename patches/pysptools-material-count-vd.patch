@@ -1,0 +1,36 @@
+# pysptools' virtual dimensionality measure is written against a numpy and a scipy that
+# are several releases stale: numpy.float was removed in 1.24, and scipy no longer
+# re-exports numpy's sqrt under its own name. Its false alarm rate is also wrapped in a
+# list whatever it is given, so the three rates the estimator asks for arrive as one and
+# the comparison against the per-band threshold fails on the ambiguity. A scalar still
+# behaves as it did. 0.15.0 is the newest release, so there is no version to move to.
+# Applies to pysptools 0.15.0.
+--- a/pysptools/material_count/vd.py
++++ b/pysptools/material_count/vd.py
+@@ -52,7 +52,7 @@
+     def est_additive_noise(r):
+         small = 1e-6
+         L, N = r.shape
+-        w=np.zeros((L,N), dtype=np.float)
++        w=np.zeros((L,N), dtype=np.float64)
+         RR=np.dot(r,r.T)
+         RRi = np.linalg.pinv(RR+small*np.eye(L))
+         RRi = np.matrix(RRi)
+@@ -177,7 +177,7 @@
+     if far == 'default':
+         far = [10**-3, 10**-4, 10**-5]
+     else:
+-        far = [far]
++        far = [far] if np.isscalar(far) else list(far)
+ 
+     numEndmembers_list = []
+     for y in range(len(far)):
+@@ -185,7 +185,7 @@
+         pf = far[y]
+         for x in range(numBands):
+             sigmaSquared = (2.*lambda_cov[x]/N) + (2.*lambda_corr[x]/N) + (2./N)*lambda_cov[x]*lambda_corr[x]
+-            sigma = sp.sqrt(sigmaSquared)
++            sigma = np.sqrt(sigmaSquared)
+             tau = -ss.norm.ppf(pf, 0, abs(sigma))
+             if (lambda_corr[x]-lambda_cov[x]) > tau:
+                 numEndmembers += 1
