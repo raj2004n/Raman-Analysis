@@ -44,16 +44,24 @@ Raman surface mapping produces large volumes of spectral data - hundreds to thou
 │   ├── analysis/          # Phase number estimation (PCA, NWHFC)
 │   ├── cnn/               # CNN model, training, evaluation, and prediction
 │   ├── data/              # Data loading and grid utilities
-│   └── visualisation/     # Heatmap, phase decomposition, and prediction viewers
+│   ├── visualisation/     # Heatmap, phase decomposition, and prediction viewers
+│   ├── config.py          # Frozen configs: seed, NMF, estimator and training settings
+│   ├── logs.py            # The one place logging is configured, called by entry points
+│   └── paths.py           # Repository, artifact and output directories
 ├── artifacts/
 │   ├── models/            # Saved Keras model files
 │   ├── weights/           # Saved model weights
 │   ├── encoders/          # Label encoders for compound classes
-│   └── metadata/          # Wavenumber range files
+│   ├── metadata/          # Wavenumber range files
+│   └── runs/<name>/       # One directory per trained run: model, encoder, run.json
+├── images/                # Figures used by this README
 ├── notebooks/             # Exploratory scripts and examples
+├── patches/               # Fixes for the two unmaintained dependencies, as diffs
 ├── scripts/               # Entry-point plotting scripts
+├── tests/                 # Test suite, with snapshots under tests/golden/
 ├── outputs/               # Generated figures and plots
-└── requirements.txt
+├── pyproject.toml         # Dependencies, extras and packaging
+└── requirements.txt       # Pinned versions of the last verified environment
 ```
 
 ---
@@ -63,10 +71,48 @@ Raman surface mapping produces large volumes of spectral data - hundreds to thou
 ```bash
 git clone https://github.com/raj2004n/Raman-Deep-Learning.git
 cd Raman-Deep-Learning
-pip install -r requirements.txt
+python -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m scripts.apply_dependency_patches
 ```
 
-Python 3.12 is recommended.
+Python 3.12 or later is required. `pyproject.toml` declares the dependencies;
+`requirements.txt` pins the exact versions the suite was last verified against, so use it
+in place of the `pip install -e '.[dev]'` line when a bit-for-bit reproduction matters.
+
+The patch step is required, not a repair for a broken install. Two of the dependencies,
+RamanSPy and PySptools, are no longer maintained and are broken against a current numpy
+and scipy: `np.trapz` was removed from numpy, and PySptools passes a scalar where it
+expects a sequence. Neither has a release to move to, and no older version of either
+avoids it. `patches/` keeps the lines that fix them as unified diffs, each with a comment
+saying what breaks and why, and `scripts/apply_dependency_patches.py` puts them onto the
+installed copies. Running it again is safe: a patch already in place is reported and not
+reapplied, and `--check` reports what it would do without writing anything.
+
+The `[dev]` extra adds pytest, which is what the suite runs on. The `[notebooks]` extra
+adds torch, which one notebook needs and the framework itself does not.
+
+Training calls `keras.utils.plot_model`, which shells out to Graphviz's `dot` binary, so
+that has to be on the system as well as the `pydot` package pip installs:
+
+```bash
+sudo apt install graphviz
+```
+
+---
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests
+```
+
+The snapshots under `tests/golden/` are compared on every run. Re-record them only when a
+change to the numbers is intended and understood:
+
+```bash
+.venv/bin/python -m pytest tests --update-golden
+```
 
 ---
 
@@ -167,7 +213,9 @@ Key libraries used:
 - [Keras](https://keras.io/) - CNN implementation
 - [NumPy](https://numpy.org/) - numerical operations
 
-See `requirements.txt` for the full list.
+See `pyproject.toml` for the declared dependencies and `requirements.txt` for the pinned
+versions of the last verified environment. Two of the packages above need the changes in
+`patches/` to run against a current numpy and scipy; the Installation section covers it.
 
 ---
 
