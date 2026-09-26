@@ -1,6 +1,7 @@
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+from src import logs
 from src.data.loader import *
 from src.data.grid import RamanGrid
 from src.cnn import runs
@@ -293,6 +294,13 @@ def prompt_predict_args():
     }
 
 def main():
+    """Runs the prompt dialogue and hands the answers to the viewer for the chosen mode.
+
+    This is an entry point, so it is where the package's logging is turned on. The
+    prompts below stay ``print``: they are a question put to whoever is at the terminal,
+    read as they are typed, and they are not a record of what the program did.
+    """
+    logs.configure()
     path, x, y, mode, kwargs = prompt_args()
 
     if mode == "heatmap":

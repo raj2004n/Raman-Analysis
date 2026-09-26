@@ -11,14 +11,12 @@ Three jobs here:
   change to a default there is a change to what every run decides.
 
 The method values are read by calling the private helpers directly rather than by
-parsing stdout, because the module's prints are expected to be replaced with logging
-later and these snapshots should not depend on them.
+parsing the report, and the module's report goes through ``logging``, which is silent
+unless a caller configures it, so a run of this file stays readable on its own.
 """
 
 from __future__ import annotations
 
-import contextlib
-import io
 from dataclasses import fields
 
 import numpy as np
@@ -44,12 +42,6 @@ def _preprocessed(cube):
     return pipeline.apply(cube)
 
 
-def _quietly(callable_, *args, **kwargs):
-    """``estimate_phase_number`` prints 19 lines. Capture them so the run stays readable."""
-    with contextlib.redirect_stdout(io.StringIO()):
-        return callable_(*args, **kwargs)
-
-
 @pytest.fixture(scope="module")
 def prepared(raw_cube):
     return _preprocessed(raw_cube)
@@ -58,7 +50,7 @@ def prepared(raw_cube):
 def test_phase_estimate_is_pinned(raw_cube, golden):
     """The headline number: how many distinct spectra the estimator reports."""
     np.random.seed(synthetic.FIXTURE_SEED)
-    estimate = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    estimate = phase_number_est.estimate_phase_number(raw_cube)
 
     golden.check("analysis.phase_estimate.predicted_n", estimate.n)
     golden.check("analysis.phase_estimate.confidence", estimate.confidence)
@@ -102,7 +94,7 @@ def test_missing_elbow_does_not_crash_and_does_not_vote(monkeypatch, raw_cube):
     monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (3, None))
     monkeypatch.setattr(phase_number_est, "_n_by_hfc", lambda cube: np.array([3, 3, 3]))
 
-    estimate = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    estimate = phase_number_est.estimate_phase_number(raw_cube)
 
     assert estimate.n == 3
     assert estimate.confidence == "moderate", (
@@ -129,7 +121,7 @@ def test_a_rejected_estimate_is_not_a_vote(monkeypatch, raw_cube):
     monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (17, 14))
     monkeypatch.setattr(phase_number_est, "_n_by_hfc", lambda cube: np.array([3, 3, 3]))
 
-    estimate = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    estimate = phase_number_est.estimate_phase_number(raw_cube)
 
     assert estimate.n is None
     assert estimate.confidence == "undetermined"
@@ -155,7 +147,7 @@ def test_a_rejection_leaves_the_other_methods_to_decide(monkeypatch, raw_cube, g
     monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (17, 3))
     monkeypatch.setattr(phase_number_est, "_n_by_hfc", lambda cube: np.array([3, 3, 3]))
 
-    estimate = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    estimate = phase_number_est.estimate_phase_number(raw_cube)
 
     golden.check("analysis.rejected_estimate.predicted_n", estimate.n)
     golden.check("analysis.rejected_estimate.confidence", estimate.confidence)
@@ -181,9 +173,7 @@ def test_the_bound_can_be_moved_by_a_caller(monkeypatch, raw_cube):
     reports 4 phases by default reports that the count is undetermined instead.
     """
     np.random.seed(synthetic.FIXTURE_SEED)
-    estimate = _quietly(
-        phase_number_est.estimate_phase_number, raw_cube, EstimatorConfig(reject_above=3)
-    )
+    estimate = phase_number_est.estimate_phase_number(raw_cube, EstimatorConfig(reject_above=3))
 
     assert estimate.votes[0].value is None
     assert "the estimate of 4 is above the limit of 3" in estimate.votes[0].rejected
@@ -203,11 +193,11 @@ def test_the_bound_seen_from_the_answer(monkeypatch, raw_cube, golden):
     monkeypatch.setattr(phase_number_est, "_n_by_hfc", lambda cube: np.array([3, 3, 3]))
 
     monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (10, 3))
-    kept = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    kept = phase_number_est.estimate_phase_number(raw_cube)
     golden.check("analysis.threshold.at_ten", kept.n)
 
     monkeypatch.setattr(phase_number_est, "_n_by_pca", lambda cube: (11, 3))
-    rejected = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    rejected = phase_number_est.estimate_phase_number(raw_cube)
     golden.check("analysis.threshold.above_ten", rejected.n)
 
     assert (kept.n, kept.confidence) == (10, "low")
@@ -336,7 +326,7 @@ def test_a_variance_curve_with_no_knee_survives_the_method(monkeypatch, raw_cube
     n_80, n_elbow = phase_number_est._n_by_pca(prepared)
     assert n_elbow is None
 
-    estimate = _quietly(phase_number_est.estimate_phase_number, raw_cube)
+    estimate = phase_number_est.estimate_phase_number(raw_cube)
 
     # one method left, and the NW-HFC estimate is nowhere near it, so there is no
     # count to name rather than a count taken from that one surviving number
@@ -369,7 +359,7 @@ def test_nmf_phase_spectra_are_pinned(raw_cube, golden):
 
     np.random.seed(synthetic.FIXTURE_SEED)
     nmf = rp.analysis.decompose.NMF(**settings)
-    abundance_maps, phases = _quietly(nmf.apply, pipeline.apply(raw_cube))
+    abundance_maps, phases = nmf.apply(pipeline.apply(raw_cube))
 
     golden.check("analysis.nmf.phase_spectra", getattr(phases, "spectral_data", phases))
     golden.check("analysis.nmf.abundance_maps", np.asarray(abundance_maps))

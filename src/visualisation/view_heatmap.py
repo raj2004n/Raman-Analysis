@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from .theme import *
 from matplotlib.widgets import Slider, TextBox, RangeSlider, Button
+
+logger = logging.getLogger(__name__)
 
 
 def _apply_intensity_mask(image, i_min, i_max):
@@ -153,7 +157,7 @@ def show_hsi_viewer(cube):
 
     # correct intensity range
     if state["correction"] > 0:
-        print(f"Intensity correction applied: +{state['correction']:.4f} to shift all values positive")
+        logger.info("Intensity correction applied: +%.4f to shift all values positive", state["correction"])
 
     # initial plots
     image = ax_image.imshow(
@@ -313,7 +317,11 @@ def show_hsi_viewer(cube):
         try:
             _recompute_auc(width_slider.val)
         except ValueError as e:
-            print(e)
+            # A window the intensity range cannot be recomputed for is recoverable: the
+            # cube keeps the scale it had and the slider stays where the user left it.
+            # Logged rather than printed, because a caller reading stdout has no way to
+            # tell this apart from output it asked for.
+            logger.warning("Could not recompute the intensity range: %s", e)
             return
 
         # reset intensity slider to cover the new cube's full range

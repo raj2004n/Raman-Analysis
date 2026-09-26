@@ -38,10 +38,10 @@ def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, n
     if n_components is None:
         estimate = estimate_phase_number(hsi_cube)
         if estimate.n is None:
-            print("Nothing to unmix without a phase count.")
+            logger.info("Nothing to unmix without a phase count.")
             return
         n_components = estimate.n
-        print(f"Estimated {n_components} phases with {estimate.confidence} confidence.")
+        logger.info("Estimated %s phases with %s confidence.", n_components, estimate.confidence)
 
     if nmf_config is None:
         nmf_config = NmfConfig()

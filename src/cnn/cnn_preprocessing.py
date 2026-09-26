@@ -1,8 +1,32 @@
-import numpy as np
+import logging
 from collections import defaultdict
+
+import numpy as np
 from scipy.interpolate import interp1d
 
+logger = logging.getLogger(__name__)
+
 def standardise_data(spectra_list, target_length, x_min=0, x_max=1400):
+    """Puts every spectrum on one shared wavenumber axis, ready for the model.
+
+    The model reads a fixed number of points, so each spectrum is interpolated onto
+    ``target_length`` points spread evenly over the training range. A point outside the
+    spectrum's own range reads as zero rather than raising, since the spectra of one
+    dataset do not all cover the same wavenumbers at the ends. Each spectrum is then
+    clipped at zero and scaled to a peak of one, so that brightness of the sample does
+    not decide what the model sees.
+
+    Args:
+        spectra_list (Sequence): The spectra to standardise, each with ``spectral_axis``
+            and ``spectral_data``.
+        target_length (int): The number of points the model takes as input.
+        x_min, x_max (float): The ends of the shared axis, in cm⁻¹. Defaults match the
+            range the model is trained over.
+
+    Returns:
+        np.ndarray: The spectra, shaped (spectra, target_length, 1). The trailing axis of
+        one is the shape the convolution layers take their input in.
+    """
     standardised_data = []
     # new wavenumber axis the intensity will be interpolated to
     new_x = np.linspace(x_min, x_max, target_length)
@@ -130,13 +154,13 @@ def build_augmented_dataset(x_train, y_train_labels, n_shift, n_noise, rng):
     x_all = np.array(original_x + augmented_x)
     y_all = np.array(original_y + augmented_y)
 
-    print(f"Original samples:            {len(original_x)}")
-    print(f"Shift augmented:             {sum(1 for _ in range(n_shift)) * len(x_train)}")
-    print(f"Noise augmented:             {sum(1 for _ in range(n_noise)) * len(x_train)}")
-    print(f"Linear combinations:         {len(augmented_x) - n_shift * len(x_train) - n_noise * len(x_train)}")
-    print(f"Total augmented samples:     {len(augmented_x)}")
-    print(f"Total samples:               {len(x_all)}")
-    print(f"Augmentation multiplier:     {len(x_all) / len(original_x):.1f}x")
+    logger.info("Original samples:            %s", len(original_x))
+    logger.info("Shift augmented:             %s", n_shift * len(x_train))
+    logger.info("Noise augmented:             %s", n_noise * len(x_train))
+    logger.info("Linear combinations:         %s", len(augmented_x) - n_shift * len(x_train) - n_noise * len(x_train))
+    logger.info("Total augmented samples:     %s", len(augmented_x))
+    logger.info("Total samples:               %s", len(x_all))
+    logger.info("Augmentation multiplier:     %.1fx", len(x_all) / len(original_x))
 
     return x_all, y_all
 

@@ -10,11 +10,13 @@ unmixing or opening a window.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
+from src import logs
 from src.analysis.phase_number_est import MethodEstimate, PhaseEstimate
 from src.config import NmfConfig
 from src.visualisation import view_phase_decomp
@@ -103,12 +105,15 @@ def test_a_given_count_is_never_estimated(raw_cube, viewer, monkeypatch):
     assert viewer["n_components"] == 4
 
 
-def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewer, monkeypatch, capsys):
+def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewer, monkeypatch, caplog):
     """No count means no unmixing, and saying so is the whole result.
 
     The estimator reports what each method found, so the user has already been told
     why there is no answer. Decomposing anyway would need a count, and the only counts
     available are the estimates the bounds already threw away.
+
+    The line saying so is a log record now rather than a print, so this reads it from the
+    log. That it reaches stdout as well is covered where the handler is set up.
     """
     monkeypatch.setattr(
         view_phase_decomp, "estimate_phase_number",
@@ -118,7 +123,8 @@ def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewe
         ),
     )
 
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, None)
+    with caplog.at_level(logging.INFO, logger=logs.LOGGER_NAME):
+        view_phase_decomp.show_spectra_ext_viewer(raw_cube, None)
 
     assert viewer == {}, "the decomposition was built without a count to give it"
-    assert "Nothing to unmix" in capsys.readouterr().out
+    assert "Nothing to unmix without a phase count." in caplog.text

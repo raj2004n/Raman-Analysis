@@ -11,11 +11,13 @@ only covered by exercising it.
 from __future__ import annotations
 
 import io
+import logging
 
 import numpy as np
 import pytest
 
 from scripts import plot_raman
+from src import logs
 from src.analysis.phase_number_est import PhaseEstimate
 from src.data.loader import Cube
 from src.visualisation import view_heatmap, view_phase_decomp
@@ -131,7 +133,7 @@ def test_the_heatmap_mode_runs_end_to_end_from_piped_answers(grid_dir, monkeypat
     view_heatmap.plt.close(figure)
 
 
-def test_an_undetermined_estimate_reaches_the_user_from_piped_answers(grid_dir, monkeypatch, capsys):
+def test_an_undetermined_estimate_reaches_the_user_from_piped_answers(grid_dir, monkeypatch, caplog):
     """Mode 2 at ``-1`` when the estimate has no count, all the way from the prompts.
 
     The estimator is the one thing replaced, with the answer the rule gives when
@@ -139,6 +141,9 @@ def test_an_undetermined_estimate_reaches_the_user_from_piped_answers(grid_dir, 
     to rely on. The prompts, the loader and the viewer are the real ones, and the
     decomposition is booby-trapped: the path being checked is the one that stops before
     it, and it stops whatever count it would have been given.
+
+    The line is a log record now rather than a print, so this reads it from the log.
+    That it reaches stdout as well is covered where the handler is set up.
     """
 
     def no_unmixing(**kwargs):
@@ -153,6 +158,7 @@ def test_an_undetermined_estimate_reaches_the_user_from_piped_answers(grid_dir, 
         f"{grid_dir} {synthetic.ROWS} {synthetic.COLS}", 2, -1, "", ""
     ))
 
-    plot_raman.main()
+    with caplog.at_level(logging.INFO, logger=logs.LOGGER_NAME):
+        plot_raman.main()
 
-    assert "Nothing to unmix without a phase count." in capsys.readouterr().out
+    assert "Nothing to unmix without a phase count." in caplog.text

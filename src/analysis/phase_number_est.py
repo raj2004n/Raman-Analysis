@@ -1,12 +1,16 @@
+import logging
+from dataclasses import dataclass
+
 import kneed
 import numpy as np
 import ramanspy as rp
-from dataclasses import dataclass
 from pysptools import material_count
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from src.config import EstimatorConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -201,27 +205,31 @@ def combine(votes, cfg):
 
 
 def _report(estimate, cfg):
-    """Prints what each method reported and what was decided from it."""
-    print("-----------------------------")
-    print("Final estimates of number of distinct spectra:")
+    """Logs what each method reported and what was decided from it.
+
+    Every method is named, including the ones that contributed nothing, so a reader can
+    see a discarded estimate and its reason rather than only the number that survived.
+    """
+    logger.info("-----------------------------")
+    logger.info("Final estimates of number of distinct spectra:")
     for vote in estimate.votes:
         if vote.votes:
-            print(f"{vote.name}: {vote.value}")
+            logger.info("%s: %s", vote.name, vote.value)
         else:
-            print(f"{vote.name}: no vote, {vote.rejected}")
-    print("-----------------------------")
+            logger.info("%s: no vote, %s", vote.name, vote.rejected)
+    logger.info("-----------------------------")
 
     if estimate.n is None:
         survivors = sum(1 for vote in estimate.votes if vote.votes)
-        print(
-            f"Best estimate of number of distinct spectra is undetermined: "
-            f"{survivors} of {len(estimate.votes)} methods gave an estimate, fewer "
-            f"than the {cfg.min_votes} needed to decide"
+        logger.info(
+            "Best estimate of number of distinct spectra is undetermined: "
+            "%s of %s methods gave an estimate, fewer than the %s needed to decide",
+            survivors, len(estimate.votes), cfg.min_votes,
         )
     else:
-        print(
-            f"Best estimate of number of distinct spectra is {estimate.n} "
-            f"with {estimate.confidence} confidence"
+        logger.info(
+            "Best estimate of number of distinct spectra is %s with %s confidence",
+            estimate.n, estimate.confidence,
         )
 
 
@@ -262,14 +270,14 @@ def estimate_phase_number(hsi_cube, cfg=None):
     n_80, n_elbow = _n_by_pca(hsi_cube_pca)
     ns_hfc        = _n_by_hfc(hsi_cube_hfc)
 
-    print("-----------------------------")
-    print(f"PCA 80% estimate: {n_80}")
-    print("-----------------------------")
-    print(f"PCA elbow estimate: {n_elbow}")
+    logger.info("-----------------------------")
+    logger.info("PCA 80%% estimate: %s", n_80)
+    logger.info("-----------------------------")
+    logger.info("PCA elbow estimate: %s", n_elbow)
     if n_elbow is None:
-        print("No knee in the PC variance curve, so this method has nothing to report.")
-    print("-----------------------------")
-    print(f"NW-HFC estimates: {ns_hfc}")
+        logger.info("No knee in the PC variance curve, so this method has nothing to report.")
+    logger.info("-----------------------------")
+    logger.info("NW-HFC estimates: %s", ns_hfc)
 
     # the two PCA estimates are checked against the bound first, since the NW-HFC
     # check compares against the PCA estimates that survived it

@@ -7,6 +7,7 @@ come from the same config, so the documented defaults and the code cannot disagr
 """
 
 import argparse
+import logging
 
 import numpy as np
 from keras.callbacks import EarlyStopping
@@ -14,12 +15,15 @@ from keras.utils import plot_model, set_random_seed, to_categorical
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 
+from src import logs
 from src.config import TrainConfig
 from src.cnn import runs
 from src.cnn.cnn_preprocessing import build_augmented_dataset, leave_one_out_split, standardise_data
 from src.cnn.evaluate import show_results
 from src.cnn.model import CNN_Model
 from src.data.loader import load_CNN_data
+
+logger = logging.getLogger(__name__)
 
 
 def train(cfg: TrainConfig) -> runs.RunManifest:
@@ -106,7 +110,8 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
     # number a report quotes, so it is measured here and written into the run's own
     # record, where it stays attached to the seed and the data that produced it.
     test_loss, test_accuracy = model.evaluate(x_test, y_test, verbose=0)
-    print(f"Held-out accuracy: {test_accuracy:.4f} over {len(y_test)} spectra")
+    metrics = {"test_loss": float(test_loss), "test_accuracy": float(test_accuracy)}
+    logger.info("Held-out accuracy: %.4f over %s spectra", test_accuracy, len(y_test))
 
     # one directory per run, so the settings, the seed and the dataset travel with the
     # model instead of having to be remembered when predicting or when defending a number
@@ -115,11 +120,13 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
         config=cfg,
         model=model,
         encoder=le,
-        metrics={"test_loss": float(test_loss), "test_accuracy": float(test_accuracy)},
+        metrics=metrics,
     )
-    print(f"Wrote run '{manifest.name}' to {run_dir}")
+    logger.info("Wrote run '%s' to %s", manifest.name, run_dir)
 
-    show_results(history, model, x_test, y_test, run_dir / runs.TRAINING_CURVES_NAME)
+    # The curves are annotated with the score measured above rather than with a second
+    # evaluation, so the figure and the run's record cannot disagree about the same run.
+    show_results(history, metrics, run_dir / runs.TRAINING_CURVES_NAME)
 
     return manifest
 
@@ -166,7 +173,12 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    """Trains one run from the command line arguments."""
+    """Trains one run from the command line arguments.
+
+    This is an entry point, so it is where the package's logging is turned on: the
+    modules that report progress only log, and nothing configures a handler for them.
+    """
+    logs.configure()
     args = parse_args(argv)
     return train(TrainConfig(
         dataset=args.dataset,

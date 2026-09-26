@@ -11,6 +11,7 @@ committed, so no real data is needed to run the suite.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src import logs  # noqa: E402  (needs REPO_ROOT on the path)
 from src.data.loader import get_raw_hsi_cube  # noqa: E402  (needs REPO_ROOT on the path)
 from tests import _golden, synthetic  # noqa: E402
 
@@ -68,6 +70,27 @@ class SnapshotStore:
                 f"    If the change is intended, re-record with: pytest --update-golden",
                 pytrace=False,
             )
+
+
+@pytest.fixture(autouse=True)
+def isolated_logging():
+    """Keeps one test's logging configuration out of the next one.
+
+    ``logs.configure`` sets the level of the ``src`` logger and attaches a handler to it,
+    and the command line entry point calls it, which several tests exercise. Both of those
+    outlive the test that caused them, so without this a later test would have the
+    package's progress lines arriving in its captured output, and its own level set by
+    whatever ran before it. The whole run is restored rather than the level alone, so a
+    handler a test attached deliberately is removed too.
+    """
+    logger = logging.getLogger(logs.LOGGER_NAME)
+    handlers = list(logger.handlers)
+    level = logger.level
+
+    yield
+
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
 
 
 @pytest.fixture(scope="session")
