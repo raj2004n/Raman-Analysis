@@ -35,6 +35,12 @@ def train(cfg: TrainConfig) -> runs.RunManifest:
     run_name = cfg.name or runs.new_run_name()
     run_dir = runs.run_directory(run_name)
 
+    # The model plot is written into the run directory before the manifest is, so the
+    # directory has to exist from the start. A run under a name that has not been used
+    # before is the ordinary case, and creating the directory only when the manifest is
+    # saved left that case failing on the plot with no such file or directory.
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     # The one source of randomness for the data side: this generator decides which
     # spectrum each class holds out and how the rest are augmented. It is a local
     # generator rather than a seed set on the global one, so the run is repeatable from

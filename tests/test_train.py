@@ -94,10 +94,23 @@ class _FakeModel:
         return [0.25, 0.75]
 
 
+class _FakeRunDir:
+    """Stands in for the run directory: records that it was created, and joins paths."""
+
+    def __init__(self):
+        self.created = []
+
+    def mkdir(self, **kwargs):
+        self.created.append(kwargs)
+
+    def __truediv__(self, other):
+        return other
+
+
 @pytest.fixture
 def training(monkeypatch):
     """Replaces every heavy step of a run and records what each one was given."""
-    recorded = {"model": _FakeModel()}
+    recorded = {"model": _FakeModel(), "run_dir": _FakeRunDir()}
 
     def fake_load(path):
         recorded["load_path"] = path
@@ -145,9 +158,9 @@ def training(monkeypatch):
         return type("Manifest", (), {"name": kwargs["config"].name or "run"})()
 
     monkeypatch.setattr(train_module.runs, "save_run", fake_save_run)
-    monkeypatch.setattr(train_module.runs, "run_directory", lambda name, root=None: recorded.setdefault(
-        "run_dir", type("Dir", (), {"__truediv__": lambda self, other: other})()
-    ))
+    monkeypatch.setattr(
+        train_module.runs, "run_directory", lambda name, root=None: recorded["run_dir"]
+    )
     return recorded
 
 
@@ -189,6 +202,18 @@ def test_a_run_records_the_axis_and_length_it_trained_on(training):
         "the score has to be measured on the held-out spectra and travel with the run"
     )
     assert manifest is not None, "the manifest of the run is what train returns"
+
+
+def test_the_run_directory_is_there_before_the_run_writes_into_it(training):
+    """The model plot is written into the run directory before the manifest is, so it has to exist first.
+
+    A run under a name used for the first time is the ordinary case, and creating the
+    directory only when the manifest was saved left that run failing on the plot with no
+    such file or directory.
+    """
+    train_module.train(replace(TrainConfig(), dataset=OTHER_DATASET, name="trial"))
+
+    assert training["run_dir"].created == [{"parents": True, "exist_ok": True}]
 
 
 def test_the_score_is_measured_on_the_held_out_spectra(training):
