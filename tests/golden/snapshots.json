@@ -1,11 +1,11 @@
 {
   "analysis.method.nw_hfc": {
-    "max": 11,
+    "max": 10,
     "min": 0,
     "shape": [
       7
     ],
-    "sum": 11
+    "sum": 10
   },
   "analysis.method.pca_80": {
     "value": 4
