@@ -20,10 +20,10 @@ import traceback
 from pathlib import Path
 
 from src import logs
-from src.data.loader import get_cumulative_hsi_cube
+from src.data.loader import get_cumulative_hsi_cube, get_raw_hsi_cube
 from src.data.grid import RamanGrid
 
-from app import session
+from app import figures, session, unmix
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +139,79 @@ def build(directory: Path, request: dict, reporter: Reporter) -> dict:
     return record
 
 
+def decompose(directory: Path, request: dict, reporter: Reporter) -> dict:
+    """Unmixes a map once, and draws what came out of it.
+
+    The map is read here rather than taken from the session, because the decomposition is
+    over raw intensities: the preprocessing it runs behind is its own, and a map the
+    heatmap screen derived with a pipeline is not a reason for this to unmix spectra that
+    already had one applied. The read is the same call the load job makes, in this
+    process, so the map the server is holding is untouched by anything this job does.
+
+    When the estimator names no count there is nothing to decompose with, so the job
+    finishes having produced the report and no panels. That is a finished job rather than
+    a failed one: the estimator's findings are the answer, and inventing a count to
+    decompose with would be the thing the rule exists to prevent.
+
+    Args:
+        directory (Path): This job's directory, which the figures are written into.
+        request (dict): ``path``, ``rows`` and ``cols`` of the map, ``count`` as the
+            component count to use or None to estimate one, and the ``start`` and ``end``
+            bounds to crop to before decomposing.
+        reporter (Reporter): Where progress is recorded.
+
+    Returns:
+        dict: The record the server reports to the screen, holding the count, the
+        estimator's report when one was taken, the range that was decomposed, and the
+        names of the figures.
+    """
+    path = request["path"]
+    rows = int(request["rows"])
+    cols = int(request["cols"])
+    count = request.get("count")
+    count = None if count is None else int(count)
+
+    reporter.step("reading", f"{rows * cols} raw spectra")
+    cube = unmix.crop(get_raw_hsi_cube(path, rows, cols), request.get("start"), request.get("end"))
+
+    if count is None:
+        # No detail: the step's own name is what there is to say, and a count is exactly
+        # what is not known yet.
+        reporter.step("estimating")
+    count, estimate = unmix.resolve_count(cube, count)
+
+    if count is None:
+        result = {"unmixed": False, "count": None, "estimate": unmix.report(estimate)}
+        reporter.done(result=result)
+        return result
+
+    reporter.step("decomposing", f"{count} components")
+    abundance_maps, phases = unmix.decomposition(cube, count)
+
+    reporter.step("drawing", f"{count} abundance maps")
+    drawn = figures.unmix_pngs(phases, cube.spectral_axis, abundance_maps, directory)
+
+    result = {
+        "unmixed": True,
+        "count": count,
+        "estimate": None if estimate is None else unmix.report(estimate),
+        "axis_start": float(cube.spectral_axis[0]),
+        "axis_end": float(cube.spectral_axis[-1]),
+        "bands": int(cube.spectral_data.shape[-1]),
+        "spectra": drawn["spectra"],
+        "maps": [
+            {"component": component, "figure": name}
+            for component, name in enumerate(drawn["maps"], start=1)
+        ],
+    }
+    reporter.done(result=result)
+    return result
+
+
 #: Every kind of job this process can run, by the name the request uses. A kind that is
 #: not here is a request the server should not have written, so it is refused rather than
 #: guessed at. ``derive`` is the same read as ``load``, with a pipeline and a range on it.
-HANDLERS = {"load": build, "derive": build}
+HANDLERS = {"load": build, "derive": build, "unmix": decompose}
 
 
 def run(directory: str) -> None:

@@ -16,17 +16,25 @@ add except a second way of saying it.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from src.data.grid import RamanGrid
 
-from app import figures, frames, jobs, session, worker
+from app import figures, frames, jobs, session, unmix, worker
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
+
+#: What one of a job's figures is allowed to be named. The name reaches the filesystem,
+#: so its shape is fixed here rather than left to whatever the job wrote: no separators, no
+#: leading dot, and a PNG, which is every figure this server draws and no other file in a
+#: job's directory.
+FIGURE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 
 
 def _publish(job: jobs.Job) -> None:
@@ -58,6 +66,40 @@ def _grid_report(path: str, rows: int, cols: int) -> dict:
     except (FileNotFoundError, ValueError) as error:
         return {"ok": False, "expected": expected, "count": None, "message": str(error)}
     return {"ok": True, "expected": expected, "count": len(files), "message": None}
+
+
+def _wavenumber_bounds(start, end) -> dict:
+    """The two ends of a spectral range, either of which may be left out.
+
+    Both routes that take a range take it the same way: a blank end means the end of the
+    map's own range rather than a default number, and a pair that is the wrong way round
+    is refused here, before either route has done anything that costs.
+
+    Args:
+        start, end: The bounds as they arrived, which may be None, blank or a string.
+
+    Returns:
+        dict: ``start`` and ``end`` as floats, each None when it was left out.
+
+    Raises:
+        HTTPException: A bound is not a number, or the range starts at or past its end.
+    """
+    bounds = {}
+    for name, value in (("start", start), ("end", end)):
+        if value in (None, ""):
+            bounds[name] = None
+            continue
+        try:
+            bounds[name] = float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{name} is not a wavenumber: {value!r}.")
+
+    if bounds["start"] is not None and bounds["end"] is not None and bounds["start"] >= bounds["end"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The range must start below where it ends: {bounds['start']} to {bounds['end']}.",
+        )
+    return bounds
 
 
 @router.get("/grid")
@@ -141,29 +183,13 @@ def derive(request: dict = Body(...)) -> dict:
 
     try:
         pipeline_id = int(request.get("pipeline_id", 0))
-        start = request.get("start")
-        end = request.get("end")
     except (TypeError, ValueError) as error:
         raise HTTPException(status_code=400, detail=f"The request is unusable: {error}.")
 
     if not 0 <= pipeline_id <= 3:
         raise HTTPException(status_code=400, detail=f"Unknown pipeline id: {pipeline_id}.")
 
-    bounds = {}
-    for name, value in (("start", start), ("end", end)):
-        if value in (None, ""):
-            bounds[name] = None
-            continue
-        try:
-            bounds[name] = float(value)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"{name} is not a wavenumber: {value!r}.")
-
-    if bounds["start"] is not None and bounds["end"] is not None and bounds["start"] >= bounds["end"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"The range must start below where it ends: {bounds['start']} to {bounds['end']}.",
-        )
+    bounds = _wavenumber_bounds(request.get("start"), request.get("end"))
 
     try:
         job = jobs.start(
@@ -178,6 +204,69 @@ def derive(request: dict = Body(...)) -> dict:
             },
             publish=_publish,
         )
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+
+    return {"job": jobs.as_dict(job)}
+
+
+@router.get("/unmix/settings")
+def unmix_settings() -> dict:
+    """What a decomposition will run with, for the screen to show before it is run.
+
+    Served rather than written into the front end, so the values on the screen are the
+    ones the code will use: the settings are read from ``NmfConfig`` at the moment they
+    are asked for, and the pipeline is the same list of steps the job builds.
+    """
+    return unmix.settings()
+
+
+@router.post("/unmix")
+def unmix_map(request: dict = Body(...)) -> dict:
+    """Unmixes the loaded map, in a child process.
+
+    A decomposition runs to ten thousand iterations by default, so it is the one job the
+    design insists can be stopped. It runs in a child for that reason: scikit-learn's NMF
+    cannot be interrupted from inside, so the process boundary is the only place a cancel
+    can land.
+
+    The range here crops inside the run, which is not what the same control does on the
+    heatmap: there it replaces the loaded cube, and here it narrows what this one
+    decomposition is taken over and leaves the map the other screens hold alone.
+
+    Nothing is published when the job finishes. An unmixing is a result rather than a
+    state the map is in, so it does not become the session.
+    """
+    record = session.metadata()
+    if record is None:
+        raise HTTPException(status_code=409, detail="No map is loaded. Load one first.")
+
+    count = None
+    if not request.get("estimate", True):
+        try:
+            count = int(request.get("count"))
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"A fixed phase count has to be a whole number: {request.get('count')!r}.",
+            )
+        if count < unmix.COUNT_MIN:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A decomposition needs at least {unmix.COUNT_MIN} component, not {count}.",
+            )
+
+    bounds = _wavenumber_bounds(request.get("start"), request.get("end"))
+
+    try:
+        job = jobs.start("unmix", {
+            "path": record["directory"],
+            "rows": record["rows"],
+            "cols": record["cols"],
+            "count": count,
+            "start": bounds["start"],
+            "end": bounds["end"],
+        })
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error))
 
@@ -271,6 +360,25 @@ def read_job(job_id: str) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="That job is no longer the current one.")
     return jobs.as_dict(job)
+
+
+@router.get("/job/{job_id}/figure/{name}")
+def job_figure(job_id: str, name: str) -> FileResponse:
+    """Sends one of a job's own figures to the browser.
+
+    A job's figures belong to that job and are read from its own directory, so a page
+    showing a finished run's panels asks for them by the identifier it was given and
+    nothing else can name them. The name is checked against the shape a figure has before
+    it reaches the filesystem, since it arrives from the browser.
+    """
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="That job is no longer the current one.")
+
+    path = job.directory / name
+    if not FIGURE_NAME.match(name) or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"No figure is called {name!r}.")
+    return FileResponse(path, media_type="image/png")
 
 
 @router.post("/job/{job_id}/cancel")

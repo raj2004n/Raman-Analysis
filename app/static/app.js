@@ -108,7 +108,7 @@ const SCREENS = {
   unmix: {
     title: "Unmixing",
     sub: "How many phases the map holds, and where each of them sits.",
-    render: renderPending,
+    render: renderUnmix,
   },
   predict: {
     title: "Predict",
@@ -131,6 +131,21 @@ function markRail(screen) {
   }
 }
 
+/** Dims the screens that need a map while none is loaded.
+ *
+ * The three screens after Data all work on the loaded map, and each of them would
+ * otherwise draw an empty shell and a sentence. Dimming says the same thing before the
+ * click rather than after it, and leaves the link in place so the rail still reads as
+ * the four screens it is.
+ */
+function markRailAvailability(loaded) {
+  for (const link of document.querySelectorAll(".rail-item")) {
+    if (link.dataset.screen === "data") continue;
+    if (loaded) link.removeAttribute("aria-disabled");
+    else link.setAttribute("aria-disabled", "true");
+  }
+}
+
 /** The receipt for what is loaded, drawn above every screen.
  *
  * A screen that needs a map says so through this rather than by drawing its own
@@ -149,9 +164,12 @@ async function drawTopbar() {
   }
 
   if (!session.loaded) {
+    markRailAvailability(false);
     bar.append(el("span", { class: "chip dim", text: "no map loaded" }));
     return;
   }
+
+  markRailAvailability(true);
 
   bar.append(
     el("span", { class: "chip strong", text: session.label }),
@@ -388,7 +406,7 @@ function renderData(root) {
 
     watchJob(started.job, {
       onStep: (job) => {
-        label.textContent = `${describeStep(job.step)}${job.detail ? ` — ${job.detail}` : ""}`;
+        label.textContent = `${describeStep(job.step)}${job.detail ? `: ${job.detail}` : ""}`;
       },
       onDone: async () => {
         label.textContent = "Read.";
@@ -432,6 +450,9 @@ function describeStep(step) {
   const steps = {
     reading: "Reading the map",
     saving: "Writing the session",
+    estimating: "Estimating the phase count",
+    decomposing: "Decomposing",
+    drawing: "Drawing the panels",
   };
   return steps[step] || step || "Working";
 }
@@ -792,9 +813,9 @@ async function renderHeatmap(root) {
 
   root.append(
     toolbar,
-    el("div", { class: "heat-body" }, [
-      el("div", { class: "heat-left" }, [mapCard, spectrumCard, lnCard, controls]),
-      el("div", { class: "heat-right" }, [
+    el("div", { class: "split" }, [
+      el("div", { class: "split-left" }, [mapCard, spectrumCard, lnCard, controls]),
+      el("div", { class: "split-right" }, [
         intensityCard, scaleCard, pixelCard, pointerCard, windowCard,
       ]),
     ]),
@@ -1007,7 +1028,7 @@ async function renderHeatmap(root) {
 
     watchJob(started.job, {
       onStep: (job) => {
-        deriveNote.textContent = `${describeStep(job.step)}${job.detail ? ` — ${job.detail}` : ""}`;
+        deriveNote.textContent = `${describeStep(job.step)}${job.detail ? `: ${job.detail}` : ""}`;
       },
       onDone: async () => {
         for (const control of [pipeline, rangeStart, rangeEnd]) control.disabled = false;
@@ -1171,6 +1192,461 @@ async function renderHeatmap(root) {
   });
 
   await refresh();
+}
+
+// --------------------------------------------------------------- the unmixing
+
+/** One row of the estimator's report: what a method found, or why it found nothing.
+ *
+ * A rejected method is listed rather than dropped, because the reason is what tells a
+ * reader whether the count is worth trusting. It is drawn in the colour the figures use
+ * for what went wrong, since a row that decided nothing should not read as one that did.
+ */
+function reportRow(vote) {
+  const props = vote.counted ? {} : { class: "rejected" };
+  return el("tr", props, [
+    el("td", { class: "mono", text: vote.name }),
+    el("td", { class: "mono", text: vote.counted ? String(vote.value) : "none" }),
+    el("td", { text: vote.rejected || "" }),
+  ]);
+}
+
+/** What the confidence in a count means, in the terms of the rule that decided it.
+ *
+ * The rule counts agreement among the estimates that survived, so what the word means
+ * is how many of them landed on the same number: every one of three or more for a high
+ * confidence, some of them or fewer than three for a moderate one, and none at all for a
+ * low one. Saying which of those happened is more use than repeating the word.
+ */
+function confidenceNote(report) {
+  const counted = report.votes.filter((vote) => vote.counted);
+  const values = new Set(counted.map((vote) => vote.value));
+
+  if (report.confidence === "high") return `all ${counted.length} estimates agree`;
+  if (report.confidence === "moderate") {
+    return values.size === 1
+      ? `${counted.length} estimates agree, which is fewer than the three that make a count certain`
+      : "some of the estimates agree, but not all of them";
+  }
+  return "no two of the estimates agree";
+}
+
+/** The line under the table: the count, how firm it is, and what that rests on. */
+function verdictLine(report) {
+  if (report.n === null) {
+    return el("div", { class: "verdict" }, [
+      el("span", { class: "verdict-count bad", text: "Count: none" }),
+      el("span", { class: "pill bad", text: report.confidence }),
+      el("span", {
+        class: "note",
+        text:
+          `${report.counted} of ${report.methods} methods gave an estimate, fewer than the ` +
+          `${report.min_votes} needed to decide, so nothing is unmixed.`,
+      }),
+    ]);
+  }
+
+  return el("div", { class: "verdict" }, [
+    el("span", { class: "verdict-count", text: `Count ${report.n}` }),
+    el("span", { class: "pill", text: report.confidence }),
+    el("span", { class: "note", text: confidenceNote(report) }),
+  ]);
+}
+
+/** The Unmixing screen: how many phases the map holds, and where each of them sits. */
+async function renderUnmix(root) {
+  let session;
+  try {
+    session = await get("/api/session");
+  } catch (error) {
+    session = { loaded: false };
+  }
+
+  if (!session.loaded) {
+    root.append(el("div", { class: "card" }, [
+      el("p", { class: "note", text: "No map is loaded. Load one on the Data screen first." }),
+      el("p", {}, [el("a", { class: "link", href: "/data", text: "Go to Data" })]),
+    ]));
+    return;
+  }
+
+  // What a decomposition runs with, served by the server rather than written out here so
+  // that the card cannot say something the job does not do.
+  let spec;
+  try {
+    spec = await get("/api/unmix/settings");
+  } catch (error) {
+    root.append(el("div", { class: "card" }, [
+      el("p", { class: "note bad", text: error.message }),
+    ]));
+    return;
+  }
+
+  const state = { estimate: true, count: 3, jobId: null, result: null, running: false };
+
+  // -- the top bar -----------------------------------------------------------
+
+  const rangeStart = el("input", {
+    type: "number", class: "narrow", id: "un-start",
+    placeholder: session.axis_start.toFixed(0),
+  });
+  const rangeEnd = el("input", {
+    type: "number", class: "narrow", id: "un-end",
+    placeholder: session.axis_end.toFixed(0),
+  });
+  const settingsToggle = el("button", {
+    type: "button", id: "un-settings-toggle", "aria-expanded": "true", text: "▾ NMF settings",
+  });
+  const status = el("span", { class: "note", id: "un-status" });
+  const run = el("button", { type: "button", class: "primary", id: "un-run", text: "Unmix" });
+
+  const toolbar = el("div", { class: "card row toolbar" }, [
+    el("label", { class: "inline-field" }, [
+      el("span", { class: "field-label", text: "RANGE (CM⁻¹)" }),
+      el("span", { class: "row" }, [
+        rangeStart, el("span", { class: "note", text: "–" }), rangeEnd,
+        // Said here rather than discovered: this crops the cube the decomposition is taken
+        // over, and does not touch the map the other screens are holding.
+        el("span", { class: "note", text: "crops before decomposing, leaving the loaded map alone" }),
+      ]),
+    ]),
+    settingsToggle,
+    el("span", { class: "spacer" }),
+    status,
+    run,
+  ]);
+
+  const progress = el("div", { class: "progress", id: "un-progress", hidden: "" });
+
+  // -- the phase count -------------------------------------------------------
+
+  const estimateRadio = el("input", {
+    type: "radio", name: "un-count-mode", id: "un-estimate", checked: "",
+  });
+  const fixedRadio = el("input", { type: "radio", name: "un-count-mode", id: "un-fixed" });
+  const minus = el("button", { type: "button", id: "un-minus", text: "−" });
+  const countInput = el("input", {
+    type: "number", id: "un-count", min: spec.count_min, step: 1, value: state.count,
+  });
+  const plus = el("button", { type: "button", id: "un-plus", text: "+" });
+
+  const countCard = el("div", { class: "card" }, [
+    el("div", { class: "field-label", text: "PHASE COUNT" }),
+    el("label", { class: "choice" }, [
+      estimateRadio,
+      el("span", {}, [
+        el("span", { class: "choice-title", text: "Estimate from the data" }),
+        el("span", {
+          class: "note",
+          text: "the default, and what −1 means on the command line",
+        }),
+      ]),
+    ]),
+    el("label", { class: "choice" }, [
+      fixedRadio,
+      el("span", { class: "row" }, [
+        el("span", { class: "choice-title", text: "Fix the count" }),
+        minus, countInput, plus,
+      ]),
+    ]),
+    el("p", {
+      class: "note",
+      text: "A fixed count is used as given, with nothing checking that the data supports it.",
+    }),
+  ]);
+
+  // -- the estimator's report ------------------------------------------------
+
+  const reportBody = el("div", { id: "un-report" });
+  const reportCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "ESTIMATOR REPORT" }),
+    ]),
+    reportBody,
+  ]);
+
+  // -- the settings ----------------------------------------------------------
+
+  const settingsCard = el("div", { class: "card" }, [
+    el("div", { class: "field-label", text: "NMF SETTINGS" }),
+    el("div", { class: "chips" }, Object.entries(spec.settings).map(([name, value]) =>
+      el("span", { class: "chip", text: `${name} ${value === null ? "none" : value}` })
+    )),
+    el("p", {
+      class: "note",
+      text:
+        `The unmixing pipeline is fixed: ${spec.pipeline.join(", ")}. It is not the ` +
+        "heatmap's pipeline.",
+    }),
+    el("p", {
+      class: "note",
+      text:
+        "A decomposition this large can take a while, which is why it runs on a button " +
+        "rather than on load.",
+    }),
+  ]);
+
+  // -- what the unmixing produced --------------------------------------------
+
+  const spectraBox = el("div", { class: "panel-plot", id: "un-spectra" });
+  const spectraNote = el("span", { class: "note" });
+  const mapGrid = el("div", { class: "map-grid", id: "un-maps" });
+
+  const spectraCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "EXTRACTED SPECTRA" }),
+      spectraNote,
+    ]),
+    spectraBox,
+  ]);
+
+  const mapsCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "ABUNDANCE MAPS" }),
+    ]),
+    mapGrid,
+    el("p", {
+      class: "note",
+      text:
+        "Up to ten components are laid out in a square grid; beyond that, one panel per " +
+        "row. Each map is scaled to its own component, so two panels are not comparable " +
+        "by colour alone.",
+    }),
+  ]);
+
+  root.append(toolbar, progress, el("div", { class: "split" }, [
+    el("div", { class: "split-left" }, [countCard, reportCard, settingsCard]),
+    el("div", { class: "split-right" }, [spectraCard, mapsCard]),
+  ]));
+
+  // -- drawing ---------------------------------------------------------------
+
+  /** A panel standing in for a result that is not there yet, or will not be. */
+  const placeholder = (message) => el("div", { class: "panel-empty note", text: message });
+
+  /** The estimator's report, or what to say in its place.
+   *
+   * A fixed count has no report to show and never will: the estimator is not run at all,
+   * which is a different thing from an estimate that came back empty.
+   */
+  const drawReport = () => {
+    reportBody.replaceChildren();
+
+    if (state.result && state.result.estimate) {
+      const report = state.result.estimate;
+      reportBody.append(
+        el("table", { class: "report" }, [
+          el("thead", {}, [el("tr", {}, [
+            el("th", { text: "METHOD" }),
+            el("th", { text: "VOTE" }),
+            el("th", { text: "NOTE" }),
+          ])]),
+          el("tbody", {}, report.votes.map(reportRow)),
+        ]),
+        verdictLine(report),
+      );
+      return;
+    }
+
+    if (!state.estimate) {
+      reportBody.append(placeholder(
+        "The count is fixed, so nothing is estimated, and what the methods would have " +
+        "found is not looked at."
+      ));
+      return;
+    }
+
+    reportBody.append(placeholder(
+      state.running
+        ? "Running the estimator…"
+        : "Nothing has been estimated yet. Unmix estimates the count first, and what every " +
+          "method reported appears here."
+    ));
+  };
+
+  /** The two panels, or what to say when there is nothing to draw. */
+  const drawResult = () => {
+    spectraBox.replaceChildren();
+    mapGrid.replaceChildren();
+    spectraNote.textContent = "";
+
+    const result = state.result;
+
+    if (!result) {
+      spectraBox.append(placeholder(state.running ? "Unmixing…" : "Nothing has been unmixed yet."));
+      mapGrid.append(placeholder(state.running ? "Unmixing…" : "One panel per component."));
+      return;
+    }
+
+    if (!result.unmixed) {
+      const message =
+        "The estimator named no count, so nothing was unmixed. Its report above is the " +
+        "whole result.";
+      spectraBox.append(placeholder(message));
+      mapGrid.append(placeholder(message));
+      return;
+    }
+
+    spectraNote.textContent =
+      `${result.count} components over ${result.axis_start.toFixed(0)} – ` +
+      `${result.axis_end.toFixed(0)} cm⁻¹, ${result.bands} bands`;
+
+    spectraBox.append(el("img", {
+      class: "panel-image",
+      src: figureUrl(result.spectra),
+      alt: "The end-member spectra of each component, drawn stacked",
+    }));
+
+    // The viewer's rule, kept: a square grid up to ten components, and one per row past
+    // that, where a square grid stops being readable.
+    const count = result.maps.length;
+    mapGrid.style.gridTemplateColumns =
+      `repeat(${count <= 10 ? Math.ceil(Math.sqrt(count)) : 1}, minmax(0, 1fr))`;
+
+    for (const entry of result.maps) {
+      mapGrid.append(el("figure", {}, [
+        el("img", {
+          class: "panel-image",
+          src: figureUrl(entry.figure),
+          alt: `The abundance of component ${entry.component} across the map`,
+        }),
+        el("figcaption", { class: "note mono", text: `Spectra ${entry.component} map` }),
+      ]));
+    }
+  };
+
+  /** Where one of the running job's own figures is served from. */
+  const figureUrl = (name) => `/api/job/${state.jobId}/figure/${encodeURIComponent(name)}`;
+
+  // -- the controls ----------------------------------------------------------
+
+  const setCountMode = (estimating) => {
+    state.estimate = estimating;
+    estimateRadio.checked = estimating;
+    fixedRadio.checked = !estimating;
+    for (const control of [minus, countInput, plus]) control.disabled = estimating;
+    drawReport();
+  };
+
+  const stepCount = (by) => {
+    state.count = Math.max(spec.count_min, state.count + by);
+    countInput.value = state.count;
+  };
+
+  estimateRadio.addEventListener("change", () => setCountMode(true));
+  fixedRadio.addEventListener("change", () => setCountMode(false));
+  minus.addEventListener("click", () => stepCount(-1));
+  plus.addEventListener("click", () => stepCount(1));
+  countInput.addEventListener("change", () => {
+    state.count = Math.max(spec.count_min, Number(countInput.value) || spec.count_min);
+    countInput.value = state.count;
+  });
+
+  settingsToggle.addEventListener("click", () => {
+    const open = settingsCard.hidden;
+    settingsCard.hidden = !open;
+    settingsToggle.textContent = `${open ? "▾" : "▸"} NMF settings`;
+    settingsToggle.setAttribute("aria-expanded", String(open));
+  });
+
+  // -- the run ---------------------------------------------------------------
+
+  const setRunning = (running) => {
+    state.running = running;
+    run.disabled = running;
+    settingsToggle.disabled = running;
+    for (const control of [rangeStart, rangeEnd, estimateRadio, fixedRadio]) control.disabled = running;
+    for (const control of [minus, countInput, plus]) control.disabled = running || state.estimate;
+  };
+
+  run.addEventListener("click", async () => {
+    // The panels of the run before are cleared rather than left under this one's progress:
+    // one screen shows one decomposition, and a stale panel beside a running job reads as
+    // this job's own result.
+    state.result = null;
+    state.jobId = null;
+    status.classList.remove("bad");
+    status.textContent = "starting…";
+    drawReport();
+    drawResult();
+    setRunning(true);
+
+    let started;
+    try {
+      started = await post("/api/unmix", {
+        estimate: state.estimate,
+        count: state.estimate ? null : state.count,
+        start: rangeStart.value === "" ? null : Number(rangeStart.value),
+        end: rangeEnd.value === "" ? null : Number(rangeEnd.value),
+      });
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("bad");
+      setRunning(false);
+      return;
+    }
+
+    state.jobId = started.job.id;
+
+    const label = el("span", { class: "note", text: "Running the estimator…" });
+    const cancel = el("button", { type: "button", text: "Cancel" });
+    progress.replaceChildren(
+      el("div", { class: "row" }, [label, cancel]),
+      el("div", { class: "bar" }, [el("div", { class: "bar-fill indeterminate" })]),
+    );
+    progress.hidden = false;
+
+    cancel.addEventListener("click", async () => {
+      cancel.disabled = true;
+      try {
+        await post(`/api/job/${state.jobId}/cancel`);
+      } catch (error) {
+        label.textContent = error.message;
+      }
+    });
+
+    const finish = () => {
+      progress.hidden = true;
+      progress.replaceChildren();
+      setRunning(false);
+    };
+
+    watchJob(started.job, {
+      onStep: (job) => {
+        // A child reports nothing until it has read its request and got to its first
+        // step, so an empty step leaves the line as it is rather than replacing a
+        // sentence that names the work with a word that names none of it.
+        if (!job.step) return;
+        const step = `${describeStep(job.step)}${job.detail ? `: ${job.detail}` : ""}`;
+        label.textContent = step;
+        status.textContent = step;
+      },
+      onDone: (job) => {
+        state.result = job.result;
+        finish();
+        status.textContent = "";
+        drawReport();
+        drawResult();
+      },
+      onCancelled: () => {
+        finish();
+        status.textContent = "The unmixing was cancelled. Nothing was produced.";
+        drawReport();
+        drawResult();
+      },
+      onError: (message) => {
+        finish();
+        status.textContent = message;
+        status.classList.add("bad");
+        drawReport();
+        drawResult();
+      },
+    });
+  });
+
+  setCountMode(true);
+  drawReport();
+  drawResult();
 }
 
 drawTopbar();

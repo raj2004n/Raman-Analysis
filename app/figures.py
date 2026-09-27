@@ -8,7 +8,10 @@ with matplotlib and written as PNGs.
 
 The heatmap export is built from the same payload the screen draws from, so the file
 and the screen show the same band, the same window and the same pixel rather than two
-nearly equal renderings of the same state.
+nearly equal renderings of the same state. The unmixing's two panels are drawn through
+RamanSPy's own plotting calls, which are the ones the command line draws them with, and
+written into the job's directory rather than into ``outputs``: they are one job's
+result, and nothing but that job's own page asks for them.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import ramanspy as rp
 from matplotlib import colormaps
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
@@ -39,6 +43,10 @@ OUTSIDE = [0.15, 0.15, 0.18, 1.0]
 
 #: Where the two dashed lines marking the window are drawn on a spectrum.
 WINDOW_LINE = "#E07B54"
+
+#: The file names one unmixing's panels are written under, in the job's own directory.
+ENDMEMBER_NAME = "endmembers.png"
+ABUNDANCE_NAME = "abundance-{component}.png"
 
 
 def masked_band(band, i_min, i_max):
@@ -136,3 +144,58 @@ def heatmap_png(cube, session_key, center: int, width_cm: float, pixel: int,
     plt.close(fig)
     logger.info("Wrote %s.", path)
     return path
+
+
+def unmix_pngs(phases, axis, abundance_maps, directory) -> dict:
+    """Draws an unmixing's end-member spectra and its abundance maps.
+
+    One file per panel rather than one figure holding all of them: the screen lays the
+    maps out in a grid of its own, and a panel then sizes in the page like any other
+    image. The viewer's rule for how many go in a row, a square grid up to ten and one
+    per row beyond that, is a layout rather than a drawing, so it is the screen's.
+
+    Each map is drawn scaled to its own component, which is what the viewer's default
+    does and what its colour bar states. Two panels are therefore not comparable by
+    colour alone, which the screen says beside them.
+
+    Args:
+        phases (list): One end-member spectrum per component.
+        axis (np.ndarray): The wavenumbers the spectra sit on.
+        abundance_maps (list): One abundance map per component, shaped like the grid.
+        directory (Path): The job's own directory, which the files are written into.
+
+    Returns:
+        dict: The name of the spectra figure under ``spectra``, and one name per component
+        under ``maps``, in component order. Names rather than full paths, because they are
+        what the page asks the server for and a path would carry the server's directories
+        into the browser.
+    """
+    apply_theme()
+    directory.mkdir(parents=True, exist_ok=True)
+
+    # The colours are given at the call rather than left to RamanSPy's default, which asks
+    # matplotlib for a colormap through a name that a current matplotlib removed. The
+    # registry is the documented replacement, and one line is drawn per phase, so one
+    # colour each is what the default produced here.
+    colours = list(colormaps[CMAP](np.linspace(0.15, 0.85, len(phases))))
+    ax = rp.plot.spectra(
+        phases, axis,
+        plot_type="single stacked",
+        label=[f"Spectra {index + 1}" for index in range(len(phases))],
+        color=colours,
+    )
+    ax.figure.savefig(directory / ENDMEMBER_NAME, dpi=110, facecolor=BG)
+    plt.close(ax.figure)
+
+    maps = []
+    for component, abundance_map in enumerate(abundance_maps, start=1):
+        fig, panel = plt.subplots(figsize=(4, 4))
+        fig.patch.set_facecolor(BG)
+        rp.plot.image(abundance_map, title=f"Spectra {component}", cmap=CMAP, ax=panel)
+        name = ABUNDANCE_NAME.format(component=component)
+        fig.savefig(directory / name, dpi=110, facecolor=BG)
+        plt.close(fig)
+        maps.append(name)
+
+    logger.info("Wrote %s and %s maps.", ENDMEMBER_NAME, len(maps))
+    return {"spectra": ENDMEMBER_NAME, "maps": maps}
