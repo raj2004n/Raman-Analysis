@@ -11,7 +11,9 @@ and the screen show the same band, the same window and the same pixel rather tha
 nearly equal renderings of the same state. The unmixing's two panels are drawn through
 RamanSPy's own plotting calls, which are the ones the command line draws them with, and
 written into the job's directory rather than into ``outputs``: they are one job's
-result, and nothing but that job's own page asks for them.
+result, and nothing but that job's own page asks for them. The prediction map is drawn
+both ways, once into the job's directory for the page and once into ``outputs`` when it
+is exported, where it carries the title and the legend a file read on its own needs.
 """
 
 from __future__ import annotations
@@ -24,7 +26,8 @@ import numpy as np
 import ramanspy as rp
 from matplotlib import colormaps
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
+from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.patches import Patch
 
 from src.paths import output_path
 from src.visualisation.theme import ACCENT, BG, FG, apply_theme
@@ -43,6 +46,11 @@ OUTSIDE = [0.15, 0.15, 0.18, 1.0]
 
 #: Where the two dashed lines marking the window are drawn on a spectrum.
 WINDOW_LINE = "#E07B54"
+
+#: The title a prediction figure carries when it names its own threshold, which an
+#: exported file does: read away from the screen, the threshold is the one thing about
+#: the picture that cannot be seen.
+THRESHOLD_TITLE = "Mineral Prediction Map (confidence threshold: {percent:.0f}%)"
 
 #: The file names one unmixing's panels are written under, in the job's own directory.
 ENDMEMBER_NAME = "endmembers.png"
@@ -199,3 +207,67 @@ def unmix_pngs(phases, axis, abundance_maps, directory) -> dict:
 
     logger.info("Wrote %s and %s maps.", ENDMEMBER_NAME, len(maps))
     return {"spectra": ENDMEMBER_NAME, "maps": maps}
+
+
+def prediction_png(index, colours, path, threshold=None, legend=None, size=(6, 6),
+                   pad_inches=None) -> Path:
+    """Draws the predicted mineral per pixel, one colour each.
+
+    The colours are handed in already assigned rather than chosen here, because which
+    mineral gets which colour depends on the set the map holds, and that set is what the
+    legend beside the figure lists. Both come from the same list, so a swatch and a pixel
+    cannot disagree.
+
+    Args:
+        index (np.ndarray): The position in ``colours`` of each pixel's mineral, shaped
+            like the grid.
+        colours (list): One RGBA per mineral, in the order the index refers to them.
+        path (Path): Where to write the figure. Its directory is created.
+        threshold (float, optional): Named in a title when given. Left out for the copy
+            the page shows, whose slider already states it.
+        legend (list, optional): Mineral names to label the colours with, in the same
+            order. Left out for the copy the page shows, which draws its own legend.
+        size (tuple): The figure's size in inches.
+        pad_inches (float, optional): Margin kept around the figure. Left out, matplotlib's
+            own default applies, which is what an exported file wants so that a legend
+            outside the axes is not cropped. The page's copy passes zero, because the page
+            turns a pointer position into a pixel by measuring against the image and a
+            border of no pixels of the map would be counted as if it were one.
+
+    Returns:
+        Path: Where the figure was written.
+    """
+    apply_theme()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, panel = plt.subplots(figsize=size)
+    fig.patch.set_facecolor(BG)
+    panel.set_axis_off()
+    # A single colour would leave matplotlib a range of one to scale, so the top of the
+    # range is at least one whatever the map holds. Only the first colour is used either
+    # way, and a map of one mineral is a map of one colour.
+    panel.imshow(
+        index,
+        cmap=ListedColormap(colours),
+        vmin=0,
+        vmax=max(len(colours) - 1, 1),
+        interpolation="nearest",
+    )
+
+    if threshold is not None:
+        panel.set_title(THRESHOLD_TITLE.format(percent=threshold * 100))
+
+    if legend:
+        panel.legend(
+            handles=[Patch(facecolor=colour, label=name) for colour, name in zip(colours, legend)],
+            bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8,
+            title="Minerals", title_fontsize=9, framealpha=0.9,
+        )
+
+    save = {"dpi": 150, "facecolor": BG, "bbox_inches": "tight"}
+    if pad_inches is not None:
+        save["pad_inches"] = pad_inches
+    fig.savefig(path, **save)
+    plt.close(fig)
+    logger.info("Wrote %s.", path)
+    return path

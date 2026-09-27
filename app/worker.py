@@ -9,7 +9,8 @@ should not start a second copy of the server to do its work.
 Running in a child process is what makes a job cancellable. The unmixing job is
 the one that needs it: scikit-learn's ``NMF`` takes a fixed number of iterations
 with no way to interrupt them from inside, so the only place a cancel can land is
-the process boundary.
+the process boundary. A prediction is one pass per row of pixels through the
+network, and is cancellable for the same reason.
 """
 
 from __future__ import annotations
@@ -20,10 +21,11 @@ import traceback
 from pathlib import Path
 
 from src import logs
+from src.cnn.predict import predict
 from src.data.loader import get_cumulative_hsi_cube, get_raw_hsi_cube
 from src.data.grid import RamanGrid
 
-from app import figures, session, unmix
+from app import figures, predictions, session, unmix
 
 logger = logging.getLogger(__name__)
 
@@ -208,10 +210,61 @@ def decompose(directory: Path, request: dict, reporter: Reporter) -> dict:
     return result
 
 
+def classify(directory: Path, request: dict, reporter: Reporter) -> dict:
+    """Predicts a mineral for every pixel of a map, and draws the map of them.
+
+    The prediction is the framework's own call, so a browser run and a command line run
+    classify a spectrum the same way. It reads the map files itself, which is also why the
+    run it is given is a full path: this job is a separate process, and it does not share
+    the server's idea of where artifacts are kept.
+
+    A refusal is reported as this job's answer rather than as a failure. ``predict``
+    documents ``ValueError`` as the two guards it applies, a model that disagrees with its
+    own manifest and a map whose measured range does not cover the range the model was
+    trained on, and both of them exist because the model would answer anyway. The answer
+    is the reason it is not shown, so the job finished and produced it.
+
+    Args:
+        directory (Path): This job's directory, which the predictions and the figure go in.
+        request (dict): ``run_path`` as the trained run to predict with, and ``path``,
+            ``rows`` and ``cols`` of the map to predict over.
+        reporter (Reporter): Where progress is recorded.
+
+    Returns:
+        dict: The run, the threshold the figure was drawn at and its legend, or
+        ``refused`` and the guard's own words.
+    """
+    run_path = request["run_path"]
+    path = request["path"]
+    rows = int(request["rows"])
+    cols = int(request["cols"])
+    run = Path(run_path).name
+
+    reporter.step("predicting")
+    try:
+        labels, top5 = predict(run_path, path, rows, cols)
+    except ValueError as error:
+        result = {"refused": True, "run": run, "reason": str(error)}
+        reporter.done(result=result)
+        return result
+
+    reporter.step("storing", f"{rows * cols} predictions")
+    predictions.save_predictions(directory, labels, top5, run)
+
+    # Named apart from the unmixing's own drawing step, since what is drawn here is one
+    # map rather than a panel per component.
+    reporter.step("mapping", "the mineral map")
+    drawn = predictions.render(directory, predictions.DEFAULT_THRESHOLD)
+
+    result = {"refused": False, "run": run, "rows": rows, "cols": cols, **drawn}
+    reporter.done(result=result)
+    return result
+
+
 #: Every kind of job this process can run, by the name the request uses. A kind that is
 #: not here is a request the server should not have written, so it is refused rather than
 #: guessed at. ``derive`` is the same read as ``load``, with a pipeline and a range on it.
-HANDLERS = {"load": build, "derive": build, "unmix": decompose}
+HANDLERS = {"load": build, "derive": build, "unmix": decompose, "predict": classify}
 
 
 def run(directory: str) -> None:

@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse
 
 from src.data.grid import RamanGrid
 
-from app import figures, frames, jobs, session, unmix, worker
+from app import figures, frames, jobs, predictions, session, unmix, worker
 
 logger = logging.getLogger(__name__)
 
@@ -273,24 +273,124 @@ def unmix_map(request: dict = Body(...)) -> dict:
     return {"job": jobs.as_dict(job)}
 
 
+@router.get("/runs")
+def list_runs() -> dict:
+    """The trained runs on disk, newest first, and the directory they were looked for in.
+
+    Answered without loading a model: a run's facts come from its manifest file, so the
+    picker does not pay for the network weights of every run it lists.
+    """
+    return predictions.catalogue()
+
+
+@router.post("/predict")
+def predict_map(request: dict = Body(...)) -> dict:
+    """Predicts a mineral for every pixel of the loaded map, in a child process.
+
+    The model and the manifest it was trained with decide how the prediction is made, so
+    the run is the one thing this route takes: there is nothing to configure here that the
+    run does not already record. A run whose measured range does not cover what the model
+    was trained on is refused by ``predict`` itself, and that refusal is the job's own
+    result rather than an error, because the model would answer anyway.
+
+    The run is resolved to a path here rather than a name being looked up again in the
+    child: the child is a separate process that builds its own idea of where the
+    repository keeps things, so what it is given has to stand on its own.
+    """
+    record = session.metadata()
+    if record is None:
+        raise HTTPException(status_code=409, detail="No map is loaded. Load one first.")
+
+    name = str(request.get("run") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="No run was given to predict with.")
+
+    try:
+        run_path = predictions.resolve_run(name)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+    try:
+        job = jobs.start("predict", {
+            "run_path": str(Path(run_path).resolve()),
+            "path": record["directory"],
+            "rows": record["rows"],
+            "cols": record["cols"],
+        })
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+
+    return {"job": jobs.as_dict(job), "run": run_path.name}
+
+
+@router.post("/predict/render")
+def predict_render(request: dict = Body(...)) -> dict:
+    """Redraws the predicted map at another confidence threshold.
+
+    No model runs here. The predictions were computed by the job and are on disk, so the
+    threshold only decides which pixels are drawn as unknown, which is what lets the
+    slider be moved rather than answered once. The figure keeps the name the job gave it,
+    so a page that already knows the job's identifier asks for it the same way.
+    """
+    job = _finished_prediction()
+    threshold = _threshold(request.get("threshold"))
+
+    try:
+        drawn = predictions.render(job.directory, threshold)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=409,
+            detail="That prediction refused its run, so there are no pixels to draw.",
+        )
+    return drawn
+
+
 @router.post("/save")
 def save(request: dict = Body(...)) -> dict:
     """Writes what a screen is showing to a file.
 
-    Only the heatmap is written this way: the unmixing and prediction figures are
-    written by the jobs that produce them, because there is nothing to export until
-    they have run. Here the screen's own state is the input, so the file matches what
-    the screen shows rather than a re-run of the same settings. The intensity range is
-    part of that state: the map is drawn masked to it, and a file drawn to the whole
-    range the data spans would not be the picture that was on screen.
+    Two screens export. The heatmap is written from the state on screen, so the file
+    matches the picture rather than a re-run of the same settings. The prediction map is
+    drawn again from the job's own predictions at the threshold the slider is on, and
+    carries the title and the legend the command line's saved file carries, because a file
+    under ``outputs`` is read away from the screen that made it.
+
+    The unmixing figures are written by the job that produces them instead. There is
+    nothing to export until it has run, and what it wrote belongs to the page showing it.
     """
+    kind = request.get("kind")
+    if kind == "heatmap":
+        return _save_heatmap(request)
+    if kind == "predict":
+        return _save_prediction(request)
+    raise HTTPException(status_code=400, detail=f"There is nothing to save for {kind!r}.")
+
+
+def _output_name(value) -> str:
+    """The file name to write under ``outputs``, from what the screen was given.
+
+    The screen offers the whole path the command line prints, so a value with the outputs
+    directory on its front is reduced to the name it ends in. Reducing it to the last
+    component is also what keeps a name from reaching anywhere else: a path that climbs
+    out of the directory arrives here as the name it was climbing towards, and under
+    ``outputs`` is where that name is written.
+
+    Raises:
+        HTTPException: What arrived is not the name of a file this server draws.
+    """
+    name = Path(str(value or "")).name
+    if not FIGURE_NAME.match(name):
+        raise HTTPException(
+            status_code=400, detail=f"That is not a figure name to write under outputs: {value!r}."
+        )
+    return name
+
+
+def _save_heatmap(request: dict) -> dict:
+    """Writes the band on screen, with the window, the pixel and the range it is drawn in."""
     cube = session.load_cube()
     if cube is None:
         raise HTTPException(status_code=409, detail="No map is loaded. Load one first.")
-
-    kind = request.get("kind")
-    if kind != "heatmap":
-        raise HTTPException(status_code=400, detail=f"There is nothing to save for {kind!r}.")
 
     record = session.metadata()
     key = record.get("session_id")
@@ -300,6 +400,7 @@ def save(request: dict = Body(...)) -> dict:
     except (TypeError, ValueError) as error:
         raise HTTPException(status_code=400, detail=f"The intensity range is not a pair of numbers: {error}.")
 
+    name = _output_name(request.get("name") or "heatmap.png")
     try:
         path = figures.heatmap_png(
             cube,
@@ -309,12 +410,62 @@ def save(request: dict = Body(...)) -> dict:
             int(request.get("pixel", 1)),
             bounds.get("i_min"),
             bounds.get("i_max"),
-            str(request.get("name") or "heatmap.png"),
+            name,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
     return {"path": str(path)}
+
+
+def _save_prediction(request: dict) -> dict:
+    """Writes the prediction map on screen, at the threshold the slider is on."""
+    job = _finished_prediction()
+    threshold = _threshold(request.get("threshold"))
+    name = _output_name(request.get("name") or predictions.EXPORT_NAME)
+
+    try:
+        path = predictions.export(job.directory, threshold, name)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=409, detail="That prediction refused its run, so there is nothing to draw."
+        )
+    return {"path": str(path)}
+
+
+def _threshold(value) -> float:
+    """The confidence threshold, as the slider sends it.
+
+    Raises:
+        HTTPException: It is not a number, or not a confidence: the threshold decides which
+            pixels are drawn as unknown, and a value outside (0, 1] would draw every pixel
+            one way or the other rather than deciding anything.
+    """
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"The threshold is not a number: {value!r}.")
+    if not 0.0 < threshold <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The threshold is a confidence, so it lies above 0 and up to 1, not {threshold}.",
+        )
+    return threshold
+
+
+def _finished_prediction() -> jobs.Job:
+    """The prediction the screen is looking at, if there is one.
+
+    The predictions live with the job that computed them, and the runner holds one job at
+    a time, so the job it is holding is the one whose map is on screen.
+
+    Raises:
+        HTTPException: No prediction has run, or the one that did is still going.
+    """
+    job = jobs.current()
+    if job is None or job.kind != "predict" or job.state != "done":
+        raise HTTPException(status_code=409, detail="No prediction has been run yet.")
+    return job
 
 
 @router.get("/session")
@@ -379,6 +530,29 @@ def job_figure(job_id: str, name: str) -> FileResponse:
     if not FIGURE_NAME.match(name) or not path.is_file():
         raise HTTPException(status_code=404, detail=f"No figure is called {name!r}.")
     return FileResponse(path, media_type="image/png")
+
+
+@router.get("/job/{job_id}/predictions")
+def job_predictions(job_id: str) -> dict:
+    """Sends a prediction job's per-pixel table to the browser.
+
+    Asked for once, when the job finishes, rather than with every move of the threshold
+    slider: the pointer reads the five most likely minerals of a pixel out of this table
+    many times a second, and a request per hover would be felt. The table is the job's
+    own file, so it is the same one a re-render reads.
+    """
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="That job is no longer the current one.")
+    if job.kind != "predict":
+        raise HTTPException(status_code=404, detail=f"A {job.kind} job has no predictions.")
+
+    try:
+        return predictions.load_predictions(job.directory)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, detail="That prediction refused its run, so it has no pixels."
+        )
 
 
 @router.post("/job/{job_id}/cancel")

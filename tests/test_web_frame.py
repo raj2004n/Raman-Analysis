@@ -360,7 +360,11 @@ def test_an_intensity_range_that_is_not_a_pair_of_numbers_is_refused(client, loa
 
 
 def test_exporting_something_that_has_no_export_is_refused(client, loaded):
-    """The unmixing and prediction figures belong to the jobs that produce them."""
+    """An unmixing's panels belong to the job that drew them, so there is nothing to save.
+
+    The heatmap and the prediction map are the two screens that write a file out; a kind
+    that names neither is refused by name rather than drawing whatever is loaded.
+    """
     response = client.post("/api/save", json={"kind": "unmix"})
 
     assert response.status_code == 400

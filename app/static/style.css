@@ -735,3 +735,87 @@ input[type="range"].vertical {
 .map-grid figure { margin: 0; }
 
 .map-grid figcaption { margin-top: 4px; font-size: 11.5px; }
+
+/* --- the prediction ----------------------------------------------------- */
+
+/* A run that refused the map is a panel rather than a message that fades: the model
+   would have answered anyway, so the panel stays where it is and nothing under it is
+   drawn. The border is the colour the figures use for what went wrong. */
+.refusal { border-color: var(--hot); }
+
+.refusal .field-label { color: var(--hot); }
+
+.refusal-text {
+  margin: 0 0 12px;
+  color: var(--hot);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* The prediction screen reads the other way round: the map is the subject and takes the
+   width, and the run, its facts and the threshold are the column beside it. */
+.split.wide-right { grid-template-columns: 340px minmax(0, 1fr); }
+
+@media (max-width: 1180px) {
+  .split.wide-right { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The map takes the width and the legend takes what a mineral name needs. */
+.map-hold {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.map-figure { flex: 1 1 auto; min-width: 0; }
+
+/* The map is read by pointing at it, so the pointer says so. */
+.map-image { cursor: crosshair; }
+
+.map-figure > .panel-empty { min-height: 240px; }
+
+.legend-list { flex: 0 0 170px; }
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11.5px;
+}
+
+.swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+}
+
+.legend-list .note { margin: 10px 0 0; font-size: 11px; }
+
+/* The run's own facts. Every row is listed whether or not the run recorded it, so the
+   value column carries the width, where a long metrics line wraps. */
+.facts { margin-bottom: 0; }
+
+.facts td:first-child { color: var(--muted); }
+
+.facts td:nth-child(2) { white-space: normal; }
+
+/* The ends of the threshold, under the slider they belong to. */
+.slider-ends { justify-content: space-between; }
+
+.hover-row {
+  display: flex;
+  gap: 16px;
+  padding: 1px 0;
+  font-size: 12.5px;
+}
+
+/* A mineral name runs long and a probability does not, so the name takes the width. */
+.hover-name { flex: 1 1 auto; min-width: 0; }
+
+.hover-prob { color: var(--muted); }
+
+.hover-prob.strong { color: var(--accent); }

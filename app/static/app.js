@@ -113,7 +113,7 @@ const SCREENS = {
   predict: {
     title: "Predict",
     sub: "A trained run applied to this map, pixel by pixel.",
-    render: renderPending,
+    render: renderPredict,
   },
 };
 
@@ -453,6 +453,9 @@ function describeStep(step) {
     estimating: "Estimating the phase count",
     decomposing: "Decomposing",
     drawing: "Drawing the panels",
+    predicting: "Predicting",
+    storing: "Storing the predictions",
+    mapping: "Drawing the map",
   };
   return steps[step] || step || "Working";
 }
@@ -1647,6 +1650,526 @@ async function renderUnmix(root) {
   setCountMode(true);
   drawReport();
   drawResult();
+}
+
+// ---------------------------------------------------------------- the predict
+
+/* What a pixel reads when its best guess is not confident enough to name a mineral.
+ * The word the server masks the labels with, since the hover card and the map have to
+ * agree about which pixels are grey. */
+const UNKNOWN = "Unknown";
+
+/* The file the command line saves a prediction map to, which is what the save box
+ * offers. Only the name matters to the server, which writes it under its outputs
+ * directory; the box shows that directory's name because that is where it lands. */
+const DEFAULT_EXPORT_NAME = "prediction_map.png";
+
+/** How a pixel reads at a threshold: its best guesses, and whether they were enough.
+ *
+ * Read from the job's own table rather than from the picture, so moving the slider
+ * re-reads the same pixels without asking the server for anything.
+ */
+function pixelReading(table, row, col, threshold) {
+  const top5 = table.top5[row][col];
+  const confidence = top5.length ? top5[0][1] : 0;
+  return { top5, confidence, unknown: confidence < threshold };
+}
+
+/** The pixel under the pointer, in the words the command line's tooltip uses.
+ *
+ * A pixel below the threshold says so instead of listing five minerals: the five are
+ * still there, and showing them would read as an answer the map has refused to give.
+ */
+function hoverCard(reading, threshold) {
+  if (!reading) {
+    return el("div", { class: "hover-card" }, [
+      el("div", { class: "field-label", text: "PIXEL" }),
+      el("p", { class: "note", text: "Point at the map to read a pixel." }),
+    ]);
+  }
+
+  const children = [el("div", { class: "field-label", text: `PIXEL (${reading.row}, ${reading.col})` })];
+
+  if (reading.unknown) {
+    const percent = (reading.confidence * 100).toFixed(1);
+    children.push(
+      el("div", { class: "hover-row" }, [
+        el("span", { class: "mono hover-name", text: UNKNOWN }),
+        el("span", { class: "mono hover-prob strong", text: `${percent}%` }),
+      ]),
+      el("p", {
+        class: "note",
+        text:
+          `Confidence: ${percent}% (below threshold). Lowering the slider below ` +
+          `${threshold.toFixed(2)} turns this pixel into a claim.`,
+      }),
+    );
+    return el("div", { class: "hover-card" }, children);
+  }
+
+  reading.top5.forEach(([label, probability], index) => {
+    children.push(el("div", { class: "hover-row" }, [
+      el("span", { class: "mono hover-name", text: `${index + 1}. ${label}` }),
+      el("span", {
+        class: index === 0 ? "mono hover-prob strong" : "mono hover-prob",
+        text: `${(probability * 100).toFixed(1)}%`,
+      }),
+    ]));
+  });
+  return el("div", { class: "hover-card" }, children);
+}
+
+/** The minerals on this map, one swatch each, and what the grey one means.
+ *
+ * Drawn here rather than into the figure so that the sentences about Unknown and about
+ * the minerals the model has but this map does not can sit with it. The colours come
+ * from the server's own assignment, so a swatch and a pixel cannot disagree.
+ */
+function legendPanel(entries) {
+  return [
+    el("div", { class: "field-label", text: "MINERALS" }),
+    ...entries.map((entry) => el("div", { class: "legend-row" }, [
+      el("span", { class: "swatch", style: `background:${entry.colour}` }),
+      el("span", { class: "mono", text: entry.name }),
+    ])),
+    el("p", {
+      class: "note",
+      text:
+        "Unknown is a refusal to guess, not a mineral. It is where the best guess fell " +
+        "below the threshold, so lowering the slider turns grey pixels into claims.",
+    }),
+    el("p", {
+      class: "note",
+      text: "Only minerals present in this map appear here, so the legend is shorter than the model's own class list.",
+    }),
+  ];
+}
+
+/** The Predict screen: a trained run applied to the loaded map, pixel by pixel. */
+async function renderPredict(root) {
+  let session;
+  try {
+    session = await get("/api/session");
+  } catch (error) {
+    session = { loaded: false };
+  }
+
+  if (!session.loaded) {
+    root.append(el("div", { class: "card" }, [
+      el("p", { class: "note", text: "No map is loaded. Load one on the Data screen first." }),
+      el("p", {}, [el("a", { class: "link", href: "/data", text: "Go to Data" })]),
+    ]));
+    return;
+  }
+
+  // The runs on disk and the directory they were looked for in, served rather than
+  // written out here, so that an empty list can name where it looked.
+  let catalogue;
+  try {
+    catalogue = await get("/api/runs");
+  } catch (error) {
+    root.append(el("div", { class: "card" }, [el("p", { class: "note bad", text: error.message })]));
+    return;
+  }
+
+  const state = {
+    threshold: catalogue.default_threshold,
+    jobId: null,
+    result: null,
+    table: null,
+    refused: null,
+    running: false,
+  };
+
+  // -- the top bar -----------------------------------------------------------
+
+  const runSelect = el("select", { id: "pr-runs" });
+  for (const entry of catalogue.runs) {
+    runSelect.append(el("option", { value: entry.name, text: entry.name }));
+  }
+  if (!catalogue.runs.length) {
+    runSelect.append(el("option", { value: "", text: "no runs found" }));
+    runSelect.disabled = true;
+  }
+
+  // A run does not have to be under the artifacts directory: the command line offers a
+  // path as well as a name, so this does too. Filled, it is what is predicted with.
+  const runPath = el("input", {
+    type: "text", id: "pr-run-path", placeholder: "or a path to a run elsewhere",
+  });
+
+  const savePath = el("input", {
+    type: "text", class: "wide", id: "pr-save-path", value: `outputs/${DEFAULT_EXPORT_NAME}`,
+  });
+
+  const status = el("span", { class: "note", id: "pr-status" });
+  const run = el("button", { type: "button", class: "primary", id: "pr-run", text: "Predict" });
+  const save = el("button", { type: "button", id: "pr-save", text: "Save PNG" });
+  save.disabled = true;
+
+  const toolbar = el("div", { class: "card row toolbar" }, [
+    el("label", { class: "inline-field" }, [
+      el("span", { class: "field-label", text: "TRAINED RUN" }),
+      el("span", { class: "row" }, [runSelect, runPath]),
+    ]),
+    el("label", { class: "inline-field" }, [
+      el("span", { class: "field-label", text: "SAVE TO" }),
+      el("span", { class: "row" }, [savePath, save]),
+    ]),
+    el("span", { class: "spacer" }),
+    status,
+    run,
+  ]);
+
+  const progress = el("div", { class: "progress", id: "pr-progress", hidden: "" });
+
+  // -- the run and its facts -------------------------------------------------
+
+  const factsBody = el("div", { id: "pr-facts" });
+
+  const runCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "TRAINED RUN" }),
+      el("span", { class: "note", text: "what the run recorded, read from its manifest" }),
+    ]),
+    factsBody,
+  ]);
+
+  /** What the chosen run was trained with, or where the runs were looked for.
+   *
+   * A row the run never recorded is shown as not recorded rather than left out: a
+   * manifest written before a field existed still loads, and that is a different thing
+   * from a run trained without it.
+   */
+  const drawFacts = () => {
+    factsBody.replaceChildren();
+
+    if (runPath.value.trim()) {
+      factsBody.append(placeholder(
+        "A run pointed at by path rather than chosen from the list: what it recorded is " +
+        "read when it is predicted."
+      ));
+      return;
+    }
+
+    const entry = catalogue.runs.find((candidate) => candidate.name === runSelect.value);
+    if (!entry) {
+      factsBody.append(placeholder(
+        `No runs were found in ${catalogue.directory}. A run is a directory holding ` +
+        "model.keras, label_encoder.pkl and run.json, as training writes them."
+      ));
+      return;
+    }
+
+    factsBody.append(el("table", { class: "report facts" }, [
+      el("tbody", {}, entry.facts.map((row) => el("tr", {}, [
+        el("td", { class: "mono", text: row.label }),
+        el("td", {
+          class: row.value === null ? "note dim" : "mono",
+          text: row.value === null ? "not recorded" : row.value,
+        }),
+      ]))),
+    ]));
+  };
+
+  // -- the threshold ---------------------------------------------------------
+
+  const thresholdValue = el("span", {
+    class: "ctrl-value", id: "pr-threshold-value", text: Number(state.threshold).toFixed(2),
+  });
+  const thresholdSlider = el("input", {
+    type: "range", id: "pr-threshold",
+    min: 0, max: 1, step: 0.01, value: Number(state.threshold).toFixed(2),
+  });
+
+  const thresholdCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "CONFIDENCE THRESHOLD" }),
+      thresholdValue,
+    ]),
+    el("p", { class: "note", text: "below this a pixel reads Unknown" }),
+    thresholdSlider,
+    el("div", { class: "row slider-ends" }, [
+      el("span", { class: "note mono", text: "0" }),
+      el("span", { class: "note mono", text: "1" }),
+    ]),
+    el("p", {
+      class: "note",
+      text:
+        `${Number(catalogue.default_threshold).toFixed(2)} is the default the command line ` +
+        "offers. Moving it is cheap: the predictions are already computed and only the " +
+        "mask is redrawn.",
+    }),
+  ]);
+
+  // -- the refusal -----------------------------------------------------------
+
+  const refusalBody = el("div", { id: "pr-refusal" });
+  const refusalCard = el("div", { class: "card refusal", id: "pr-refusal-card", hidden: "" }, [
+    el("div", { class: "field-label", text: "RUN REFUSED" }),
+    refusalBody,
+  ]);
+
+  // -- the map ---------------------------------------------------------------
+
+  const mapImage = el("img", {
+    class: "panel-image map-image", id: "pr-map",
+    alt: "The predicted mineral per pixel, one colour each",
+  });
+  const mapBox = el("div", { class: "map-figure", id: "pr-map-hold" });
+  const legendBody = el("div", { class: "legend-list", id: "pr-legend" });
+  const hoverBody = el("div", { id: "pr-hover" });
+
+  const mapCard = el("div", { class: "card" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "MINERAL MAP" }),
+      el("span", { class: "note", text: "one colour per mineral, grey where the guess was too weak" }),
+    ]),
+    el("div", { class: "map-hold" }, [mapBox, legendBody]),
+  ]);
+
+  // The card's own heading is the readout's first line, so the card needs none of its
+  // own: a pixel is read as one panel rather than as a heading and a panel under it.
+  const hoverPanel = el("div", { class: "card", id: "pr-hover-card" }, [hoverBody]);
+
+  // The map is the screen's subject and the controls are a column beside it, which is the
+  // way round the other two screens are not: there the reader is looking at a picture
+  // they are steering, and here at a picture they are reading a run against.
+  root.append(toolbar, progress, el("div", { class: "split wide-right" }, [
+    el("div", { class: "split-left" }, [refusalCard, runCard, thresholdCard]),
+    el("div", { class: "split-right" }, [mapCard, hoverPanel]),
+  ]));
+
+  // -- drawing ---------------------------------------------------------------
+
+  /** A panel standing in for a result that is not there yet, or will not be. */
+  const placeholder = (message) => el("div", { class: "panel-empty note", text: message });
+
+  /** The map the job drew, or what to say in its place. */
+  const drawMap = () => {
+    mapBox.replaceChildren();
+    legendBody.replaceChildren();
+    hoverBody.replaceChildren(hoverCard(null, state.threshold));
+
+    if (state.refused) {
+      mapBox.append(placeholder("Nothing is drawn: the run refused this map."));
+      return;
+    }
+    if (!state.result) {
+      mapBox.append(placeholder(state.running ? "Predicting…" : "Nothing has been predicted yet."));
+      return;
+    }
+
+    // The picture is redrawn at each threshold, so the request carries the threshold it
+    // was asked for: without it the browser serves the copy it already has.
+    mapImage.src = `${figureUrl(state.result.figure)}?t=${state.threshold}`;
+    mapBox.append(mapImage);
+    legendBody.append(...legendPanel(state.result.minerals));
+  };
+
+  /** The refusal, in the guard's own words, kept on screen until the run changes.
+   *
+   * Not a message that fades: what the model would have answered anyway is exactly what
+   * a reader must not be left with, so nothing below this panel is drawn while it is up.
+   */
+  const drawRefusal = () => {
+    refusalBody.replaceChildren();
+    refusalCard.hidden = !state.refused;
+    if (!state.refused) return;
+
+    refusalBody.append(
+      el("p", { class: "refusal-text", text: state.refused.reason }),
+      el("p", {
+        class: "note",
+        text:
+          "A refusal rather than a warning, because the model answers anyway. Nothing " +
+          "below is drawn until the range or the run is changed.",
+      }),
+    );
+  };
+
+  /** Where one of the running job's own figures is served from. */
+  const figureUrl = (name) => `/api/job/${state.jobId}/figure/${encodeURIComponent(name)}`;
+
+  /** Reads the pixel under the pointer and shows what it was guessed to be. */
+  const showPixel = (event) => {
+    if (!state.table || !state.result) return;
+
+    const rect = mapImage.getBoundingClientRect();
+    const { rows, cols } = state.result;
+    const clamp = (value, high) => Math.min(high - 1, Math.max(0, value));
+    const col = clamp(Math.floor(((event.clientX - rect.left) / rect.width) * cols), cols);
+    const row = clamp(Math.floor(((event.clientY - rect.top) / rect.height) * rows), rows);
+
+    hoverBody.replaceChildren(hoverCard(
+      { row, col, ...pixelReading(state.table, row, col, state.threshold) },
+      state.threshold,
+    ));
+  };
+
+  mapImage.addEventListener("pointermove", showPixel);
+  mapImage.addEventListener("pointerleave", () => {
+    hoverBody.replaceChildren(hoverCard(null, state.threshold));
+  });
+
+  // -- the controls ----------------------------------------------------------
+
+  const setRunning = (running) => {
+    state.running = running;
+    run.disabled = running;
+    runSelect.disabled = running || !catalogue.runs.length;
+    for (const control of [runPath, savePath, thresholdSlider]) control.disabled = running;
+    save.disabled = running || !state.result;
+  };
+
+  runSelect.addEventListener("change", drawFacts);
+  runPath.addEventListener("change", drawFacts);
+
+  // One redraw per pause rather than one per step of the slider: each move of it is a
+  // figure drawn on the server, and a drag would otherwise queue a request per pixel of
+  // travel. The last one asked for wins, so an answer that arrives late is dropped.
+  let pending = null;
+  const redraw = async (threshold) => {
+    const asked = threshold;
+    try {
+      const drawn = await post("/api/predict/render", { threshold: asked });
+      if (state.threshold !== asked) return;
+      state.result = { ...state.result, ...drawn };
+      state.refused = null;
+      drawMap();
+      drawRefusal();
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("bad");
+    }
+  };
+
+  thresholdSlider.addEventListener("input", () => {
+    state.threshold = Number(thresholdSlider.value);
+    thresholdValue.textContent = state.threshold.toFixed(2);
+    if (!state.result) return;
+
+    clearTimeout(pending);
+    pending = setTimeout(() => redraw(state.threshold), 120);
+  });
+
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    status.classList.remove("bad");
+    try {
+      const written = await post("/api/save", {
+        kind: "predict",
+        threshold: state.threshold,
+        name: savePath.value.trim() || DEFAULT_EXPORT_NAME,
+      });
+      status.textContent = `wrote ${written.path}`;
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("bad");
+    }
+    save.disabled = !state.result;
+  });
+
+  // -- the run ---------------------------------------------------------------
+
+  run.addEventListener("click", async () => {
+    // The map of the run before is cleared rather than left under this one's progress:
+    // one screen shows one prediction, and a stale map beside a running job reads as
+    // this job's own result.
+    state.result = null;
+    state.table = null;
+    state.refused = null;
+    state.jobId = null;
+    status.classList.remove("bad");
+    status.textContent = "starting…";
+    drawMap();
+    drawRefusal();
+    setRunning(true);
+
+    let started;
+    try {
+      started = await post("/api/predict", {
+        run: runPath.value.trim() || runSelect.value,
+      });
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("bad");
+      setRunning(false);
+      return;
+    }
+
+    state.jobId = started.job.id;
+
+    const label = el("span", { class: "note", text: "Predicting…" });
+    const cancel = el("button", { type: "button", text: "Cancel" });
+    progress.replaceChildren(
+      el("div", { class: "row" }, [label, cancel]),
+      el("div", { class: "bar" }, [el("div", { class: "bar-fill indeterminate" })]),
+    );
+    progress.hidden = false;
+
+    cancel.addEventListener("click", async () => {
+      cancel.disabled = true;
+      try {
+        await post(`/api/job/${state.jobId}/cancel`);
+      } catch (error) {
+        label.textContent = error.message;
+      }
+    });
+
+    const finish = () => {
+      progress.hidden = true;
+      progress.replaceChildren();
+      setRunning(false);
+    };
+
+    watchJob(started.job, {
+      onStep: (job) => {
+        // A child reports nothing until it has read its request and got to its first
+        // step, so an empty step leaves the line as it is rather than replacing a
+        // sentence that names the work with a word that names none of it.
+        if (!job.step) return;
+        const step = `${describeStep(job.step)}${job.detail ? `: ${job.detail}` : ""}`;
+        label.textContent = step;
+        status.textContent = step;
+      },
+      onDone: async (job) => {
+        state.result = job.result;
+        state.refused = job.result.refused ? job.result : null;
+        finish();
+        status.textContent = "";
+
+        if (!state.refused) {
+          try {
+            state.table = await get(`/api/job/${state.jobId}/predictions`);
+          } catch (error) {
+            status.textContent = error.message;
+            status.classList.add("bad");
+          }
+        }
+
+        drawMap();
+        drawRefusal();
+      },
+      onCancelled: () => {
+        finish();
+        status.textContent = "The prediction was cancelled. Nothing was produced.";
+        drawMap();
+        drawRefusal();
+      },
+      onError: (message) => {
+        finish();
+        status.textContent = message;
+        status.classList.add("bad");
+        drawMap();
+        drawRefusal();
+      },
+    });
+  });
+
+  drawFacts();
+  drawMap();
+  drawRefusal();
 }
 
 drawTopbar();
