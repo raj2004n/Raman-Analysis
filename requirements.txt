@@ -2,10 +2,10 @@
 # matters. pyproject.toml is the list to read and the one pip resolves; this is what pip
 # actually resolved on a clean install of it. Regenerate it rather than editing it:
 #
-#     python -m venv /tmp/raman-core
-#     /tmp/raman-core/bin/pip install -e '.[dev]'
-#     /tmp/raman-core/bin/python -m scripts.apply_dependency_patches
-#     /tmp/raman-core/bin/pip freeze --exclude-editable > requirements.txt
+#     python -m venv /tmp/raman-web
+#     /tmp/raman-web/bin/pip install -e '.[dev,web]'
+#     /tmp/raman-web/bin/python -m scripts.apply_dependency_patches
+#     /tmp/raman-web/bin/pip freeze --exclude-editable > requirements.txt
 #
 # The third step is not optional. Two of the dependencies are unmaintained and broken
 # against a current numpy and scipy, and patches/ holds the lines that repair them. A
@@ -16,20 +16,29 @@
 # pydot writes the file and the system's own dot binary draws it.
 #
 absl-py==2.5.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
 astunparse==1.6.3
 certifi==2026.7.22
 charset-normalizer==3.5.1
+click==8.5.0
 cloudpickle==3.1.2
 contourpy==1.4.0
 cvxopt==1.3.3
 cycler==0.12.1
+fastapi==0.141.1
 flatbuffers==25.12.19
 fonttools==4.66.0
 gast==0.7.0
 google-pasta==0.2.0
 grpcio==1.84.0
+h11==0.16.0
 h5py==3.16.0
+httpcore==1.0.9
+httpx==0.28.1
 idna==3.20
+iniconfig==2.3.0
 joblib==1.6.0
 keras==3.15.1
 kiwisolver==1.5.1
@@ -49,12 +58,16 @@ optree==0.20.0
 packaging==26.3
 pandas==3.0.6
 pillow==12.3.0
+pluggy==1.6.0
 protobuf==7.36.2
 pybaselines==1.2.1
+pydantic==2.13.5
+pydantic_core==2.46.5
 pydot==4.0.1
 Pygments==2.21.0
 pyparsing==3.3.3
 pysptools==0.15.0
+pytest==9.1.1
 python-dateutil==2.9.0.post0
 ramanspy==0.2.10
 renishawWiRE==0.1.16
@@ -64,14 +77,17 @@ scikit-learn==1.9.1
 scipy==1.18.1
 setuptools==84.0.0
 six==1.17.0
+starlette==1.7.0
 tensorboard==2.20.0
 tensorboard-data-server==0.7.2
 tensorflow==2.20.0
 termcolor==3.3.0
 threadpoolctl==3.7.0
+typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.8.0
+uvicorn==0.54.0
 Werkzeug==3.1.8
 wget==3.2
 wheel==0.48.0
-wrapt==2.4.1
+wrapt==2.5.0

@@ -126,9 +126,52 @@ change to the numbers is intended and understood:
 
 ---
 
+## Browser Interface
+
+The framework is driven from a browser, which serves itself on this machine:
+
+```bash
+.venv/bin/python -m app
+```
+
+That opens `http://127.0.0.1:8000`, where the four tools are four screens: **Data** reads a
+map, **Heatmap** explores it, **Unmixing** extracts its components and **Predict** applies a
+trained run to it. The address is bound to the loopback interface, so this is a desktop tool
+and not something reachable from the local network.
+
+The screens share one map at a time. Loading another one releases the map that was held,
+and the map is read from disk once and then kept in memory: moving the heatmap's window or
+its intensity controls redraws without touching the files again. Changing the pipeline or
+the range in the heatmap's top bar is the exception, since those change what the loader
+produces rather than how it is drawn.
+
+Reading a map, unmixing it and predicting from it are minutes-long jobs. Each runs in its
+own child process, so the interface stays responsive and a job can be cancelled, which kills
+it. One job runs at a time.
+
+The predictions are the framework's own: the Predict screen calls the same `src.cnn.predict`
+the command line calls, and colours the map by the rule the viewer uses, so a pixel cannot
+come out as a different mineral here than it does elsewhere. Two things are arranged
+differently rather than computed differently. The legend is drawn in the page, which lets
+the notes about `Unknown` and about the minerals a model has but a map does not sit beside
+it, and the five most likely minerals reach the page as data, so the hover card is built
+without a request per movement of the pointer.
+
+A map or a run the guards refuse leaves the refusal on the screen, in the guard's own
+words, rather than as a message that fades. That is deliberate: the model would have
+answered anyway, and an answer drawn under a warning nobody read is worse than no answer.
+
+Training has no screen. It stays a script, since it is run once per model rather than looked
+at.
+
+---
+
 ## Interactive CLI Usage
 
-To launch the analysis framework, execute the following command from the root directory:
+The command line does the same three analyses as the browser, on one terminal and with a
+matplotlib window per view. It came first and is kept alongside the interface.
+
+To launch it, execute the following command from the root directory:
 
 ```bash
 python3 -m scripts.plot_raman
