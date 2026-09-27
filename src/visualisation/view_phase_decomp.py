@@ -57,20 +57,18 @@ def show_spectra_ext_viewer(hsi_cube, n_components=None, start=None, end=None, n
 
     abundance_maps, phases = nmf.apply(hsi_cube_nmf)
     
-    ax = rp.plot.spectra(
+    # The colours are given at the call rather than left to ramanspy's default, which asks
+    # matplotlib for a colormap through plt.cm.get_cmap, removed in matplotlib 3.11. The
+    # registry is the documented replacement and has been since 3.5. One line is drawn per
+    # phase, so one colour each is what the default produced here.
+    colors = list(colormaps["magma"](np.linspace(0.15, 0.85, len(phases))))
+
+    rp.plot.spectra(
         phases, hsi_cube.spectral_axis,
         plot_type="single stacked",
-        label=[f"Spectra {i + 1}" for i in range(len(phases))]
+        label=[f"Spectra {i + 1}" for i in range(len(phases))],
+        color=colors,
     )
-
-    # matplotlib.colormaps rather than matplotlib.cm.get_cmap, which is removed in
-    # matplotlib 3.11. The registry is the documented replacement and has been since 3.5.
-    magma = colormaps["magma"]
-    lines = ax.get_lines()
-    colors = magma(np.linspace(0.15, 0.85, len(lines)))
-
-    for line, color in zip(lines, colors):
-        line.set_color(color)
 
     plt.show()
     n = len(abundance_maps)

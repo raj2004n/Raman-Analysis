@@ -1,5 +1,5 @@
-"""The phase decomposition viewer's three jobs: forward its settings, know what "estimate it"
-means, and stop when there is no count to decompose with.
+"""The phase decomposition viewer's four jobs: forward its settings, know what "estimate it"
+means, stop when there is no count to decompose with, and give the plot its own colours.
 
 The settings used to be an inline dictionary in the viewer, which meant a caller could
 not choose a solver, an iteration cap or a seed, and could not see what a run had used.
@@ -33,16 +33,6 @@ class _Recorder:
         return [np.zeros((2, 2)) for _ in range(n)], np.zeros((n, 4))
 
 
-class _Lines:
-    """Enough of a matplotlib Axes for the viewer's recolouring loop."""
-
-    def __init__(self, count):
-        self.lines = [type("Line", (), {"set_color": lambda self, color: None})() for _ in range(count)]
-
-    def get_lines(self):
-        return self.lines
-
-
 @pytest.fixture
 def viewer(monkeypatch):
     """Replaces the decomposition, the plotting and the estimate, and hands back the recorder."""
@@ -53,7 +43,7 @@ def viewer(monkeypatch):
         return _Recorder(**kwargs)
 
     monkeypatch.setattr(view_phase_decomp.rp.analysis.decompose, "NMF", fake_nmf)
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", lambda *a, **k: _Lines(recorded.get("n_components", 1)))
+    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", lambda *a, **k: None)
     monkeypatch.setattr(view_phase_decomp.rp.plot, "image", lambda *a, **k: None)
     monkeypatch.setattr(view_phase_decomp.plt, "show", lambda: None)
     monkeypatch.setattr(view_phase_decomp, "estimate_phase_number", lambda cube: PhaseEstimate(3, "high", ()))
@@ -128,3 +118,24 @@ def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewe
 
     assert viewer == {}, "the decomposition was built without a count to give it"
     assert "Nothing to unmix without a phase count." in caplog.text
+
+
+def test_the_colours_are_given_at_the_call(raw_cube, viewer, monkeypatch):
+    """The viewer must not leave the colours to ramanspy's default.
+
+    That default reaches matplotlib through ``plt.cm.get_cmap``, which matplotlib 3.11
+    removed, so asking for it is what crashed this viewer on a current install. It is
+    computed inside ramanspy, so the only way not to depend on it is to pass every colour
+    in. One line is drawn per phase, so one colour each is what the plot expects.
+    """
+    seen = {}
+
+    def fake_spectra(*args, **kwargs):
+        seen.update(kwargs)
+        return None
+
+    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", fake_spectra)
+    view_phase_decomp.show_spectra_ext_viewer(raw_cube, 3)
+
+    assert "color" in seen, "ramanspy would otherwise compute a default through a removed API"
+    assert len(seen["color"]) == 3, "a colour for each of the three phases"
