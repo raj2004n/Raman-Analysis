@@ -1,0 +1,14 @@
+# ramanspy's scalable plot decorator builds the colour list a plot is drawn with
+# through matplotlib.cm.get_cmap, which matplotlib 3.11 removed, so every plot routed
+# through the decorator raises as soon as the caller gives no colour. plt.get_cmap is
+# the surviving name for the same call: both return the colormap named by rcParams,
+# so a plot drawn through the decorator keeps the colours it had.
+# Applies to ramanspy 0.2.10.
+--- a/ramanspy/plot/plot.py
++++ b/ramanspy/plot/plot.py
+@@ -306,4 +306,4 @@
+         if kwargs.get("color", None) is None:
+-            cmap = plt.cm.get_cmap()  # using matplotlib's default colormap
++            cmap = plt.get_cmap()  # using matplotlib's default colormap
+             kwargs["color"] = list(cmap(np.linspace(0, 1, len(data_to_plot))))
+ 
