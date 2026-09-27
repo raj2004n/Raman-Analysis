@@ -1,0 +1,138 @@
+"""Figures drawn on the server and written as files.
+
+The band image and the two spectra are drawn in the browser, because the pointer
+touches them constantly and a request per slider move would be felt. What is left is
+what a person asks for once and then looks at: the end-member spectra, the abundance
+maps, the prediction map, and the heatmap exported as a picture. Those are drawn here
+with matplotlib and written as PNGs.
+
+The heatmap export is built from the same payload the screen draws from, so the file
+and the screen show the same band, the same window and the same pixel rather than two
+nearly equal renderings of the same state.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import colormaps
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+
+from src.paths import output_path
+from src.visualisation.theme import ACCENT, BG, FG, apply_theme
+
+from app import frames
+
+logger = logging.getLogger(__name__)
+
+#: The colormap the maps are drawn in, and the one the browser draws them in too.
+CMAP = "magma"
+
+#: What an area outside the intensity range is drawn as, instead of being clipped to
+#: the end of the colormap. Clipping would show an out-of-range pixel as the brightest
+#: one in the map, which is the opposite of what it is.
+OUTSIDE = [0.15, 0.15, 0.18, 1.0]
+
+#: Where the two dashed lines marking the window are drawn on a spectrum.
+WINDOW_LINE = "#E07B54"
+
+
+def masked_band(band, i_min, i_max):
+    """The band as an RGBA image, with everything outside the range greyed.
+
+    Args:
+        band (np.ndarray): Areas, shaped (rows, cols).
+        i_min, i_max (float): The intensity range the map is drawn in.
+
+    Returns:
+        np.ndarray: The image, shaped (rows, cols, 4).
+    """
+    image = colormaps[CMAP](Normalize(vmin=i_min, vmax=i_max, clip=True)(band))
+    image[(band < i_min) | (band > i_max)] = OUTSIDE
+    return image
+
+
+def heatmap_png(cube, session_key, center: int, width_cm: float, pixel: int,
+                i_min: float | None = None, i_max: float | None = None,
+                name: str = "heatmap.png") -> Path:
+    """Draws the heatmap as it stands and writes it beside the other outputs.
+
+    Args:
+        cube (Cube): The session's cube.
+        session_key: What identifies the map and its derivation, for the window cache.
+        center (int): Which band is on screen.
+        width_cm (float): The window width in cm⁻¹.
+        pixel (int): The pixel whose spectrum is drawn.
+        i_min, i_max (float or None): The intensity range the screen is drawing the map
+            in, so the file carries the picture that was on screen rather than the whole
+            range the data happens to span. Left out, the range is the data's own.
+        name (str): The file name under ``outputs/``.
+
+    Returns:
+        Path: Where the figure was written.
+
+    Raises:
+        ValueError: The window is wider than the spectral range, from ``frames``.
+    """
+    apply_theme()
+    data = frames.frame(cube, session_key, center, width_cm, pixel)
+
+    band = np.asarray(data["band"])
+    axis = np.asarray(data["axis"])
+    spectrum = np.asarray(data["spectrum"])
+    limits = data["limits"]
+
+    if i_min is None or i_max is None:
+        i_min, i_max = limits["i_min"], limits["i_max"]
+
+    fig = plt.figure(figsize=(12.5, 9))
+    fig.patch.set_facecolor(BG)
+    ax_image = fig.add_axes([0.07, 0.55, 0.55, 0.38])
+    ax_spectrum = fig.add_axes([0.07, 0.31, 0.55, 0.17])
+    ax_ln = fig.add_axes([0.07, 0.07, 0.55, 0.17])
+
+    ax_image.set_title(
+        f"{data['window_start']:.0f} – {data['window_end']:.0f} cm⁻¹ "
+        f"(window {width_cm:.0f} cm⁻¹, {data['window_bands']} bands)"
+    )
+    ax_image.set_axis_off()
+    ax_image.imshow(
+        masked_band(band, i_min, i_max),
+        aspect="equal", origin="upper", interpolation="nearest",
+    )
+
+    # The colour bar is built from a scalar mappable rather than from the image, because
+    # the image is already RGBA: there is no scalar in it for a bar to be drawn from, and
+    # one taken from it would come out in whichever colormap is the default rather than in
+    # the one the picture is drawn in.
+    mappable = ScalarMappable(norm=Normalize(vmin=i_min, vmax=i_max), cmap=CMAP)
+    mappable.set_array([])
+    colour_bar = fig.colorbar(mappable, ax=ax_image, fraction=0.046)
+    colour_bar.set_ticks(np.linspace(i_min, i_max, 5))
+    colour_bar.set_label("Area under the spectrum", color=FG, fontsize=9)
+    colour_bar.ax.yaxis.set_tick_params(color=FG, labelsize=8)
+    plt.setp(colour_bar.ax.yaxis.get_ticklabels(), color=FG)
+
+    for ax, values, label in (
+        (ax_spectrum, spectrum, "Intensity"),
+        (ax_ln, np.log(np.maximum(spectrum + limits["correction"] + 1e-10, 1e-10)), "ln(Intensity)"),
+    ):
+        ax.plot(axis, values, color=ACCENT, linewidth=1)
+        for edge in (data["window_start"], data["window_end"]):
+            ax.axvline(edge, color=WINDOW_LINE, linestyle="--", alpha=0.7)
+        ax.set_ylabel(label)
+        ax.set_xlim(axis[0], axis[-1])
+
+    ax_spectrum.set_title(f"Intensity Spectra, pixel {pixel}")
+    ax_ln.set_title("Intensity Spectra (ln scale)")
+    ax_ln.set_xlabel(r"Raman Shift cm$^{-1}$")
+
+    path = output_path(name)
+    fig.savefig(path, dpi=110, facecolor=BG)
+    plt.close(fig)
+    logger.info("Wrote %s.", path)
+    return path

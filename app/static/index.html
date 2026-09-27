@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raman Maps</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- The rail is the whole navigation. One map stays loaded while its screens are
+     looked at, so a screen is a link rather than a reload. -->
+<aside class="rail">
+  <div class="rail-brand">Raman Maps</div>
+
+  <nav class="rail-nav">
+    <a class="rail-item" href="/data" data-screen="data">Data</a>
+    <a class="rail-item" href="/heatmap" data-screen="heatmap">Heatmap</a>
+    <a class="rail-item" href="/unmix" data-screen="unmix">Unmixing</a>
+    <a class="rail-item" href="/predict" data-screen="predict">Predict</a>
+  </nav>
+
+  <div class="rail-recent" id="rail-recent" hidden>
+    <div class="rail-label">RECENT</div>
+    <ul class="rail-recent-list" id="rail-recent-list"></ul>
+  </div>
+
+  <div class="rail-foot">127.0.0.1:8000 &middot; this machine only</div>
+</aside>
+
+<main class="main">
+  <!-- On every screen: what was read, and what it was read with. -->
+  <header class="topbar" id="topbar"></header>
+  <section class="screen" id="screen"></section>
+</main>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -23,7 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# httpx is what fastapi.testclient drives the app with, so it sits with the suite.
+dev = ["pytest>=8", "httpx>=0.27,<1"]
+# The serving layer in app/. Deliberately not in the list above: a trained run records
+# the names that list holds, and a web server is not something a model was trained
+# against. Install it as '.[dev,web]' to run the browser interface and its tests.
+web = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
 # notebooks/test_nn.py is the only file in the tree that imports torch. Keeping it out
 # of the list above keeps the CUDA wheels torch pulls in out of an ordinary install.
 notebooks = ["torch>=2.10"]
@@ -33,9 +38,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-# The installed packages are the framework and its entry points. tests/ and notebooks/
-# are run from the checkout and are not part of the distribution.
-include = ["src*", "scripts*"]
+# The installed packages are the framework, its entry points, and the serving layer
+# that puts them in a browser. tests/ and notebooks/ are run from the checkout and are
+# not part of the distribution.
+include = ["src*", "scripts*", "app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

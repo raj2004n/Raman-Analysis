@@ -1,0 +1,612 @@
+/* The interface's palette and layout.
+
+   The colours are the ones the matplotlib viewers are drawn in, copied from
+   src/visualisation/theme.py, so a figure the server renders and the page around
+   it are the same set of colours rather than two that nearly match. */
+
+:root {
+  --bg:            #0E1117;
+  --fg:            #E6EDF3;
+  --grid:          #2F3742;
+  --accent:        #4FB3FF;
+
+  --panel:         #161B22;
+  --surface:       #21262D;
+  --edge:          #30363D;
+
+  --active:        #58A6FF;
+  --hover:         #1F6FEB;
+
+  --track:         #2D333B;
+  --handle:        #79C0FF;
+
+  --hot:           #F78166;
+  --ok:            #3FB950;
+  --warn:          #D29922;
+
+  --wire:          #5A6472;
+  --muted:         #8B949E;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --rail-width: 208px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- the rail: the only navigation ------------------------------------- */
+
+.rail {
+  flex: 0 0 var(--rail-width);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 12px;
+  border-right: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+.rail-brand {
+  padding: 0 10px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.rail-item {
+  display: block;
+  padding: 8px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.rail-item:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.rail-item[aria-current="page"] {
+  border-left-color: var(--accent);
+  background: var(--surface);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* A screen that cannot be entered yet reads as unavailable rather than as a
+   link that fails on the next click. */
+.rail-item[aria-disabled="true"] {
+  opacity: .4;
+  pointer-events: none;
+}
+
+.rail-recent {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge);
+}
+
+.rail-label {
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+}
+
+.rail-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-recent-list button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-recent-list button:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.rail-foot {
+  margin-top: auto;
+  padding: 12px 10px 0;
+  color: var(--wire);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* --- the page ----------------------------------------------------------- */
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The receipt for what was read, the same on every screen. */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+.topbar:empty {
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.screen {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 24px;
+}
+
+/* What a screen draws. The heading and the sub-line above it stay on one measure
+   however wide the window is. */
+.screens {
+  max-width: 1180px;
+}
+
+/* A form beside its preview. The preview is the narrower column, since it is a
+   count and a shape rather than something that is read. */
+.grid-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The dot per pixel, laid out in the shape of the grid. */
+.preview {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.dot {
+  aspect-ratio: 1;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+}
+
+.dot.filled {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.why p { margin: 0 0 10px; }
+.why p:last-child { margin-bottom: 0; }
+
+/* --- pieces the screens are built from --------------------------------- */
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.sub {
+  margin: 0 0 22px;
+  max-width: 62ch;
+  color: var(--muted);
+}
+
+.card {
+  padding: 16px 18px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+}
+
+input[type="text"], input[type="number"], select {
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+/* A grid is a pair of small numbers, so they are sized to what they hold rather
+   than stretched to the card. */
+input[type="number"] { width: 5.5rem; }
+
+/* Paths and run names run long, so they get the width and can still shrink. */
+.wide {
+  width: 30rem;
+  max-width: 100%;
+}
+
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { background: var(--btn-hover, #30363D); }
+
+button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--hover);
+  background: var(--hover);
+  color: #fff;
+  font-weight: 600;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.note.warn { color: var(--warn); }
+
+/* What is wrong with the form above it, in the grid's own words. Amber while a
+   directory is merely incomplete, red once the grid itself is wrong. */
+.strip {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: rgba(210, 153, 34, .08);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.strip[data-state="error"] {
+  border-color: var(--hot);
+  background: rgba(247, 129, 102, .08);
+}
+
+.strip[hidden] { display: none; }
+
+/* --- the picker, the progress and the rest of the Data screen ----------- */
+
+.picker {
+  margin: -6px 0 18px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.picker[hidden] { display: none; }
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--edge);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.picker-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.picker-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.picker-item:hover { background: var(--surface); }
+
+.progress { margin-top: 16px; }
+.progress[hidden] { display: none; }
+
+.bar {
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+/* A step is known but a fraction is not, so the bar moves without claiming one. */
+.bar-fill.indeterminate {
+  width: 30%;
+  height: 100%;
+  background: var(--active);
+  animation: slide 1.4s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0%   { margin-left: -30%; }
+  100% { margin-left: 100%; }
+}
+
+.chip.dim { color: var(--muted); }
+.chip.strong { border-color: var(--accent); color: var(--accent); }
+
+.mono { font-family: var(--mono); }
+
+/* Words that are themselves the reason something was refused, in the colour the
+   figures use for the same thing. */
+.bad { color: var(--hot); }
+
+.link { color: var(--accent); }
+
+/* --- the heatmap -------------------------------------------------------- */
+
+/* The map and its two spectra on the left, the controls and the rules that explain
+   them on the right. The rules sit beside the controls they describe rather than in
+   a manual, so what a click does is readable from the screen it happens on. */
+.heat-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .heat-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.heat-left, .heat-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.toolbar { align-items: flex-end; }
+
+.inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inline-field .field-label { margin-bottom: 0; }
+.inline-field .row { gap: 6px; }
+
+.toolbar .spacer { flex: 1 1 auto; }
+
+/* A grid size, a pixel number, a wavenumber: all small enough to size to what they
+   hold, so a row of them stays a row. */
+.narrow { width: 6.5rem; }
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.panel-head .field-label { margin-bottom: 0; }
+
+.map-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The canvas is sized from its own bitmap by the screen, so that one pixel is one
+   square and the element keeps the grid's shape at every window size. A point on the
+   image is turned back into a pixel number by where it falls in the element, which only
+   holds while the squares stay square. */
+.map {
+  display: block;
+  margin: 0 auto;
+  border: 1px solid var(--grid);
+  background: var(--bg);
+  image-rendering: pixelated;
+}
+
+/* The hover readout: the pixel the pointer is over, in a fixed corner, and the marks
+   that point at the cell it is in. The readout does not follow the pointer because the
+   number is easier to read when it stays in one place, and because the crosshair already
+   says where the pointer is. */
+.map-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  pointer-events: none;
+}
+
+.crosshair {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  line-height: 0;
+  pointer-events: none;
+}
+
+.crosshair[hidden] { display: none; }
+
+/* The colour bar is what the intensity range is scaled to, so it stands beside the
+   image with its ends named. */
+.colourbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 5.5rem;
+  text-align: right;
+}
+
+.colourbar .note { font-family: var(--mono); font-size: 10.5px; }
+
+.colourbar-track {
+  flex: 1 1 auto;
+  min-height: 120px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+}
+
+#map-note { margin: 10px 0 0; }
+
+.panel-plot { line-height: 0; }
+
+/* The panel is drawn in its own coordinates and scaled to the column, so the two
+   spectra are as wide as the map above them without either being stretched. */
+.panel-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ctrl { display: block; }
+
+.ctrl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ctrl-head .field-label { margin-bottom: 0; }
+
+.ctrl-value {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+input[type="range"] {
+  display: block;
+  width: 100%;
+  accent-color: var(--handle);
+}
+
+/* A range rather than a value, so it is read as one vertical pair: the top of the
+   bar is the largest area on the map and the bottom is the smallest. */
+.vertical-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.vertical-pair .note {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+input[type="range"].vertical {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 1.5rem;
+  height: 180px;
+}

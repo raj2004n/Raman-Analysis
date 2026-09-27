@@ -40,6 +40,7 @@ Raman surface mapping produces large volumes of spectral data - hundreds to thou
 
 ```
 .
+├── app/                   # The browser interface: HTTP routes, jobs and the front end
 ├── src/
 │   ├── analysis/          # Phase number estimation (PCA, NWHFC)
 │   ├── cnn/               # CNN model, training, evaluation, and prediction
@@ -89,8 +90,17 @@ saying what breaks and why, and `scripts/apply_dependency_patches.py` puts them 
 installed copies. Running it again is safe: a patch already in place is reported and not
 reapplied, and `--check` reports what it would do without writing anything.
 
-The `[dev]` extra adds pytest, which is what the suite runs on. The `[notebooks]` extra
-adds torch, which one notebook needs and the framework itself does not.
+The `[dev]` extra adds pytest, which is what the suite runs on. The `[web]` extra adds
+FastAPI and uvicorn, which serve the browser interface, and the tests that drive it need
+both extras:
+
+```bash
+.venv/bin/pip install -e '.[dev,web]'
+```
+
+The `[notebooks]` extra adds torch, which one notebook needs and the framework itself does
+not. The web server is kept out of the core dependencies on purpose: a trained run records
+the core list among its facts, and a model was not trained against a web server.
 
 Training calls `keras.utils.plot_model`, which shells out to Graphviz's `dot` binary, so
 that has to be on the system as well as the `pydot` package pip installs:

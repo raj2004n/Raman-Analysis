@@ -28,8 +28,10 @@ IMPORT_TO_DISTRIBUTION = {"sklearn": "scikit-learn"}
 
 #: Directories whose imports have to be declared. The notebooks are deliberately not in
 #: this list: they are an exploratory record rather than part of the framework, and the
-#: one that needs torch states so through the notebooks extra.
-SHIPPED = ("src", "scripts")
+#: one that needs torch states so through the notebooks extra. ``app`` is the serving
+#: layer, whose dependencies are declared in the ``web`` extra rather than in the core
+#: list, since a trained run records the core list and does not need a web server.
+SHIPPED = ("src", "scripts", "app")
 
 
 def _declared_dependencies():
@@ -56,10 +58,19 @@ def _optional_dependencies():
     }
 
 
+def _allowed_dependencies():
+    """Everything the shipped code may import: the core list plus the ``web`` extra."""
+    return set(_declared_dependencies()) | set(_optional_dependencies()["web"])
+
+
 def _imported_distributions(root):
     """Every third-party distribution imported under ``root``, as distribution names."""
     imported = set()
-    for file in sorted((root / "src").rglob("*.py")) + sorted((root / "scripts").rglob("*.py")):
+    files = []
+    for directory in SHIPPED:
+        if (root / directory).is_dir():
+            files += sorted((root / directory).rglob("*.py"))
+    for file in files:
         tree = ast.parse(file.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -69,7 +80,7 @@ def _imported_distributions(root):
             else:
                 continue
             for name in names:
-                if name in sys.stdlib_module_names or name in {"src", "scripts"}:
+                if name in sys.stdlib_module_names or name in SHIPPED:
                     continue
                 imported.add(IMPORT_TO_DISTRIBUTION.get(name, name))
     return imported
@@ -82,22 +93,29 @@ def test_the_declared_dependencies_are_the_recorded_ones():
 
 def test_every_distribution_the_code_imports_is_declared():
     """The check F13 exists for: a 90-line freeze cannot say what is actually used."""
-    undeclared = sorted(_imported_distributions(REPO_ROOT) - set(runs.RECORDED_PACKAGES))
+    undeclared = sorted(_imported_distributions(REPO_ROOT) - _allowed_dependencies())
 
     assert undeclared == [], (
-        "these are imported under src/ or scripts/ but are not declared as dependencies: "
-        + ", ".join(undeclared)
+        "these are imported under src/, scripts/ or app/ but are neither declared as "
+        "dependencies nor listed in the web extra: " + ", ".join(undeclared)
     )
 
 
 def test_the_import_check_would_notice_a_missing_dependency(monkeypatch, tmp_path):
-    """The guard is only worth having if it fails on the thing it forbids."""
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "stray.py").write_text("import a_package_nobody_declared\n")
+    """The guard is only worth having if it fails on the thing it forbids.
 
-    undeclared = sorted(_imported_distributions(tmp_path) - set(runs.RECORDED_PACKAGES))
+    One stray file per shipped directory, so the check that every one of them is walked
+    fails here rather than silently covering two of the three.
+    """
+    for directory in SHIPPED:
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / "stray.py").write_text(
+            f"import a_package_nobody_declared_{directory}\n"
+        )
 
-    assert undeclared == ["a_package_nobody_declared"]
+    undeclared = sorted(_imported_distributions(tmp_path) - _allowed_dependencies())
+
+    assert undeclared == [f"a_package_nobody_declared_{name}" for name in sorted(SHIPPED)]
 
 
 def test_the_declared_dependencies_are_what_an_import_reaches():

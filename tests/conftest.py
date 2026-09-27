@@ -93,6 +93,29 @@ def isolated_logging():
     logger.setLevel(level)
 
 
+@pytest.fixture
+def isolated_artifacts(monkeypatch, tmp_path) -> Path:
+    """Points everything the browser interface writes at a temporary directory.
+
+    ``artifacts_dir`` builds its path from ``paths.REPO_ROOT`` when it is called rather
+    than when it is imported, so moving that constant is enough to move the session
+    directories, the job directories and any exported figure with it. A test run leaves
+    the checkout's own ``artifacts/`` alone.
+
+    The job runner's single slot is cleared too, so a job a test left behind is not the
+    job the next test finds already running.
+
+    Returns:
+        Path: The repository root this test's artifacts are written under.
+    """
+    from app import jobs
+    from src import paths
+
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.setattr(jobs, "_CURRENT", None)
+    return tmp_path / "repo"
+
+
 @pytest.fixture(scope="session")
 def golden(request):
     store = SnapshotStore(_golden.load_snapshots(), request.config.getoption("--update-golden"))
@@ -111,3 +134,24 @@ def grid_dir(tmp_path_factory) -> Path:
 @pytest.fixture(scope="session")
 def raw_cube(grid_dir):
     return get_raw_hsi_cube(grid_dir, synthetic.ROWS, synthetic.COLS)
+
+
+@pytest.fixture(scope="session")
+def client():
+    """A test client over the browser application.
+
+    Built through ``create_app`` rather than importing the module-level ``app``, so the
+    suite gets its own instance and a state a test leaves behind stays in that instance.
+    Session scoped because building the application mounts its static directory, which is
+    the same work every time.
+
+    The import is inside the fixture: ``fastapi`` and ``httpx`` live in the ``web`` extra,
+    so a checkout that installed only the core list cannot import this module and should
+    fail at the one test that needs the server rather than at collection.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as test_client:
+        yield test_client
