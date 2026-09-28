@@ -29,9 +29,12 @@ dev = ["pytest>=8", "httpx>=0.27,<1"]
 # the names that list holds, and a web server is not something a model was trained
 # against. Install it as '.[dev,web]' to run the browser interface and its tests.
 web = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
-# notebooks/test_nn.py is the only file in the tree that imports torch. Keeping it out
-# of the list above keeps the CUDA wheels torch pulls in out of an ordinary install.
-notebooks = ["torch>=2.10"]
+# What running a notebook needs that the framework does not. notebooks/test_nn.py is the
+# only file in the tree that imports torch, and keeping it out of the list above keeps the
+# CUDA wheels torch pulls in out of an ordinary install. The three jupyter packages are
+# what executes a notebook to a file with its outputs in it; a front end for editing one
+# interactively is left to whoever is reading it.
+notebooks = ["torch>=2.10", "nbformat>=5.10,<6", "nbclient>=0.10,<1", "ipykernel>=6.29,<8"]
 
 [build-system]
 requires = ["setuptools>=68"]
