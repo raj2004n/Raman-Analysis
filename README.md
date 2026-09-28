@@ -58,7 +58,7 @@ Raman surface mapping produces large volumes of spectral data - hundreds to thou
 ├── images/                # Figures used by this README
 ├── notebooks/             # Exploratory scripts and examples
 ├── patches/               # Fixes for the two unmaintained dependencies, as diffs
-├── scripts/               # Entry-point plotting scripts
+├── scripts/               # Applies the dependency patches under patches/
 ├── tests/                 # Test suite, with snapshots under tests/golden/
 ├── outputs/               # Generated figures and plots
 ├── pyproject.toml         # Dependencies, extras and packaging
@@ -149,8 +149,8 @@ Reading a map, unmixing it and predicting from it are minutes-long jobs. Each ru
 own child process, so the interface stays responsive and a job can be cancelled, which kills
 it. One job runs at a time.
 
-The predictions are the framework's own: the Predict screen calls the same `src.cnn.predict`
-the command line calls, and colours the map by the rule the viewer uses, so a pixel cannot
+The predictions are the framework's own: the Predict screen calls `src.cnn.predict`
+unchanged, and colours the map by the rule the viewer uses, so a pixel cannot
 come out as a different mineral here than it does elsewhere. Two things are arranged
 differently rather than computed differently. The legend is drawn in the page, which lets
 the notes about `Unknown` and about the minerals a model has but a map does not sit beside
@@ -164,44 +164,10 @@ answered anyway, and an answer drawn under a warning nobody read is worse than n
 Training has no screen. It stays a script, since it is run once per model rather than looked
 at.
 
----
-
-## Interactive CLI Usage
-
-The command line does the same three analyses as the browser, on one terminal and with a
-matplotlib window per view. It came first and is kept alongside the interface.
-
-To launch it, execute the following command from the root directory:
-
-```bash
-python3 -m scripts.plot_raman
-```
-
----
-
-### Example Session
-
-```
-Enter path, grid rows and grid columns (or '?' for help):
-e.g. ~/Code/Data_SH/SB008 10 13
-> ~/Code/Data_SH/SB008 10 13
-Found 130 .txt file(s) in /home/raj/Code/Data_SH/SB008.
-
-Select mode (or '?' for help):
-  [1] Heatmap
-  [2] Unmixing
-  [3] Predict (incomplete)
-> 1
-
-Pipeline? [0] None  [1] P1  [2] P2  [3] P3 (default: 0, or '?' for help)
-> 0
-
-Start of spectra in cm⁻¹ (press Enter to skip, or '?' for help)
-> 200
-
-End of spectra in cm⁻¹ (press Enter to skip, or '?' for help)
-> 1200
-```
+The command line that came first has been retired now that the browser covers the same three
+analyses. It read its answers from the terminal and opened a matplotlib window per view, so
+one view had to be closed before the next one opened. It is kept readable on disk outside the
+repository, and git history holds the last version of it.
 
 ---
 

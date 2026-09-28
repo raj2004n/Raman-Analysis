@@ -1,11 +1,12 @@
 """Guards that the retired code stays retired.
 
 Two earlier models, a batch-time data generator, a comparison plot and a
-rolling-window loader were removed from ``src/``. Nothing imported them, but a
-name can come back by accident (a copy-paste, a merge), and a dead function that
-is silently reachable again is how the same code gets maintained twice. These
-checks read the parsed tree rather than the text, so a mention inside a docstring
-or a comment does not count as a use.
+rolling-window loader were removed from ``src/``, and the interactive command
+line was retired once the browser covered the same three analyses. Nothing
+imported the removed code, but a name can come back by accident (a copy-paste, a
+merge), and a dead function that is silently reachable again is how the same code
+gets maintained twice. These checks read the parsed tree rather than the text, so
+a mention inside a docstring or a comment does not count as a use.
 """
 
 import ast
@@ -21,11 +22,20 @@ RETIRED = {
     "DataGenerator": "src/cnn/cnn_preprocessing.py",
     "plot_standardised_comparison": "src/cnn/cnn_preprocessing.py",
     "get_area_under_hsi_cube": "src/data/loader.py",
+    # The retired command line's prompt layer. Only the prompts are listed: the
+    # viewers they called are still live under ``src/visualisation/`` and the
+    # browser draws through the same ones.
+    "prompt_args": "scripts/plot_raman.py",
+    "prompt_mode": "scripts/plot_raman.py",
+    "prompt_heatmap_args": "scripts/plot_raman.py",
+    "prompt_phase_decomp_args": "scripts/plot_raman.py",
+    "prompt_run_dir": "scripts/plot_raman.py",
+    "prompt_predict_args": "scripts/plot_raman.py",
 }
 
 
 def _live_sources():
-    """Every module that ships: the package and the command line entry points."""
+    """Every module that ships: the package, and the scripts under ``scripts/``."""
     return sorted((REPO_ROOT / "src").rglob("*.py")) + sorted((REPO_ROOT / "scripts").rglob("*.py"))
 
 
