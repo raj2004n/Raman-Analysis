@@ -14,10 +14,21 @@
   <div class="rail-brand">Raman Maps</div>
 
   <nav class="rail-nav">
-    <a class="rail-item" href="/data" data-screen="data">Data</a>
-    <a class="rail-item" href="/heatmap" data-screen="heatmap">Heatmap</a>
-    <a class="rail-item" href="/unmix" data-screen="unmix">Unmixing</a>
-    <a class="rail-item" href="/predict" data-screen="predict">Predict</a>
+    <a class="rail-item" href="/data" data-screen="data">
+      <span class="rail-text">Data</span>
+    </a>
+    <a class="rail-item" href="/heatmap" data-screen="heatmap">
+      <span class="rail-text">Heatmap</span>
+      <span class="rail-hint">Load a map first: the heatmap reads the one loaded from the Data screen</span>
+    </a>
+    <a class="rail-item" href="/unmix" data-screen="unmix">
+      <span class="rail-text">Unmixing</span>
+      <span class="rail-hint">Load a map first: the unmixing reads the one loaded from the Data screen</span>
+    </a>
+    <a class="rail-item" href="/predict" data-screen="predict">
+      <span class="rail-text">Predict</span>
+      <span class="rail-hint">Load a map first: the prediction reads the one loaded from the Data screen</span>
+    </a>
   </nav>
 
   <div class="rail-recent" id="rail-recent" hidden>

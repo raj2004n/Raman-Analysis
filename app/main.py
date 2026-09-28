@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -56,6 +56,20 @@ def create_app() -> FastAPI:
     application = FastAPI(title="Raman Maps", docs_url=None, redoc_url=None)
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     application.include_router(api.router)
+
+    @application.middleware("http")
+    async def revalidate_static(request: Request, call_next):
+        """Makes the browser revalidate the front end's files on every request.
+
+        The shell, the stylesheet and the script are edited in place while the interface
+        is being worked on, and a browser that keeps the stylesheet it fetched an hour
+        ago draws a screen the code no longer describes. Static files carry an ETag, so
+        revalidating costs an empty 304 on a loopback connection.
+        """
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @application.get("/", include_in_schema=False)
     def index() -> RedirectResponse:

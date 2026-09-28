@@ -70,6 +70,7 @@ body {
 }
 
 .rail-item {
+  position: relative;
   display: block;
   padding: 8px 10px;
   border-left: 2px solid transparent;
@@ -78,7 +79,7 @@ body {
   text-decoration: none;
 }
 
-.rail-item:hover {
+.rail-item:hover:not([aria-disabled="true"]) {
   background: var(--surface);
   color: var(--fg);
 }
@@ -90,11 +91,37 @@ body {
   font-weight: 600;
 }
 
-/* A screen that cannot be entered yet reads as unavailable rather than as a
-   link that fails on the next click. */
+/* A screen that cannot be entered yet reads as unavailable, says why while the pointer
+   is over it, and refuses the click rather than letting it through to a page that would
+   draw nothing. The link keeps its href, so the rail stays a set of links and the screen
+   can still be opened deliberately from elsewhere. */
 .rail-item[aria-disabled="true"] {
-  opacity: .4;
-  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.rail-item[aria-disabled="true"] .rail-text { opacity: .4; }
+
+/* The reason sits over the items below rather than pushing them down: a rail that
+   rearranged itself under the pointer would move the thing being pointed at. */
+.rail-hint {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: 7px 9px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.rail-item[aria-disabled="true"]:hover .rail-hint,
+.rail-item[aria-disabled="true"]:focus-visible .rail-hint {
+  display: block;
 }
 
 .rail-recent {
@@ -176,17 +203,26 @@ body {
   padding: 24px;
 }
 
-/* What a screen draws. The heading and the sub-line above it stay on one measure
-   however wide the window is. */
+/* What a screen draws. The panels take whatever width the window gives them: they are
+   pictures and controls read against each other, and a picture held to a measure reads
+   as a thumbnail on a wide screen. The heading and the sub-line above the panels are
+   prose, so those two keep a measure of their own. */
 .screens {
-  max-width: 1180px;
+  width: 100%;
 }
 
-/* A form beside its preview. The preview is the narrower column, since it is a
-   count and a shape rather than something that is read. */
+.screen > h1,
+.screen > .sub {
+  max-width: 78ch;
+}
+
+/* A form beside its preview. The preview is the narrower column, since it is a count
+   and a shape rather than something that is read. Its share is taken from the row rather
+   than fixed, so on a wide window it grows with the window instead of staying the size it
+   was on a small one, and the form's card takes the rest. */
 .grid-2 {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 40%);
   gap: 16px;
   align-items: start;
 }
@@ -292,6 +328,14 @@ input[type="number"] { width: 5.5rem; }
   max-width: 100%;
 }
 
+/* The map directory is the one thing the Data screen asks for, and a path is read
+   against the counts beside it, so the box takes its card's width rather than a fixed
+   measure: on a wide window the alternative is a short box and a card of empty space. */
+#data-directory {
+  flex: 1 1 auto;
+  width: auto;
+}
+
 input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -326,6 +370,10 @@ button.primary {
   font-size: 13px;
 }
 
+/* A card of explanation is read, so its lines keep a measure even when the panel it sits
+   in is as wide as the window. */
+.card.why .note { max-width: 92ch; }
+
 .note.warn { color: var(--warn); }
 
 /* What is wrong with the form above it, in the grid's own words. Amber while a
@@ -346,7 +394,29 @@ button.primary {
   background: rgba(247, 129, 102, .08);
 }
 
+/* The read went through. It is said in the same strip that reports what is wrong, so a
+   confirmation and a complaint are read in the same place on the screen. */
+.strip[data-state="ok"] {
+  border-color: var(--ok);
+  background: rgba(63, 185, 80, .08);
+}
+
 .strip[hidden] { display: none; }
+
+/* While a job runs the pointer says so wherever it is. The two heavy jobs run for
+   minutes, and a pointer that looks idle over a screen that is working reads as a click
+   that did not land. The control that started the job carries the same cursor, since
+   that is where the hand is. */
+body.is-working,
+body.is-working .rail-item,
+body.is-working a,
+body.is-working button,
+body.is-working input,
+body.is-working select,
+body.is-working label,
+.is-working {
+  cursor: progress;
+}
 
 /* --- the picker, the progress and the rest of the Data screen ----------- */
 
@@ -426,27 +496,65 @@ button.primary {
 
 .link { color: var(--accent); }
 
-/* --- the two-column screens --------------------------------------------- */
+/* --- the panels of a screen --------------------------------------------- */
 
-/* What is looked at on the left, the controls and the rules that explain them on the
-   right. The rules sit beside the controls they describe rather than in a manual, so
-   what a click does is readable from the screen it happens on. */
-.split {
+/* A screen steered by its controls is read across rather than down: the panels go side
+   by side in one row, so the picture, what is drawn from it and the controls that steer
+   it are all in view at once. Stacking them instead puts the picture in a corner, since
+   every panel above it takes height off it.
+
+   Each screen names its own columns below, in the order the screen reads. The rules a
+   screen is written around are read once rather than steered, so those take a row of
+   their own under the panels. */
+.panel-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 316px;
   gap: 16px;
   align-items: start;
 }
 
-@media (max-width: 1180px) {
-  .split { grid-template-columns: minmax(0, 1fr); }
+/* Heatmap: the map, the spectra drawn from it, and the controls. The map is given the
+   larger share because it is the panel being steered. */
+.cols-map {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 300px;
 }
 
-.split-left, .split-right {
+/* Unmixing: what is asked for, what the estimator made of it, and what came out. */
+.cols-unmix {
+  grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+/* Predict reads the other way round: the map is the subject and takes the width, and the
+   run, its facts and the threshold are the column beside it. */
+.cols-predict {
+  grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.cols-notes {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.panel-col {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+
+/* A row of three columns needs more room than a row of two, so the narrower windows drop
+   to one column first. */
+@media (max-width: 1280px) {
+  .cols-map,
+  .cols-unmix {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .cols-predict { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .cols-notes { grid-template-columns: minmax(0, 1fr); }
 }
 
 .toolbar { align-items: flex-end; }
@@ -590,9 +698,18 @@ input[type="range"] {
   accent-color: var(--handle);
 }
 
-/* A range rather than a value, so it is read as one vertical pair: the top of the
-   bar is the largest area on the map and the bottom is the smallest. */
+/* A range rather than a value, so it is read as a range: the two handles stand side by
+   side, each named above itself. Stacked one over the other the pair is twice as tall as
+   the map beside it, and the height it takes is height the page then has to scroll. */
 .vertical-pair {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 20px;
+}
+
+.pair-col {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -608,7 +725,7 @@ input[type="range"].vertical {
   writing-mode: vertical-lr;
   direction: rtl;
   width: 1.5rem;
-  height: 180px;
+  height: 130px;
 }
 
 /* --- the unmixing ------------------------------------------------------- */
@@ -753,14 +870,6 @@ input[type="range"].vertical {
   line-height: 1.6;
 }
 
-/* The prediction screen reads the other way round: the map is the subject and takes the
-   width, and the run, its facts and the threshold are the column beside it. */
-.split.wide-right { grid-template-columns: 340px minmax(0, 1fr); }
-
-@media (max-width: 1180px) {
-  .split.wide-right { grid-template-columns: minmax(0, 1fr); }
-}
-
 /* The map takes the width and the legend takes what a mineral name needs. */
 .map-hold {
   display: flex;
@@ -770,8 +879,23 @@ input[type="range"].vertical {
 
 .map-figure { flex: 1 1 auto; min-width: 0; }
 
-/* The map is read by pointing at it, so the pointer says so. */
-.map-image { cursor: crosshair; }
+/* The map is read by pointing at it, so the pointer says so.
+
+   It is a square picture, so its width follows its height rather than the other way
+   round: at the column's full width it would be as tall as the column is wide. The
+   height is set from the room the window has left, so the width comes out of that. */
+.map-image {
+  cursor: crosshair;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+}
+
+/* The readout below the map lists five minerals at most, and the card keeps that room
+   whether or not a pixel is being read. The map above it is sized against the readout,
+   so a card that grew as the pointer crossed the picture would resize the picture under
+   the pointer. */
+.pr-readout { min-height: 160px; }
 
 .map-figure > .panel-empty { min-height: 240px; }
 

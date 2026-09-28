@@ -136,7 +136,9 @@ function markRail(screen) {
  * The three screens after Data all work on the loaded map, and each of them would
  * otherwise draw an empty shell and a sentence. Dimming says the same thing before the
  * click rather than after it, and leaves the link in place so the rail still reads as
- * the four screens it is.
+ * the four screens it is. The reason goes in a hint inside each link, and the click is
+ * refused in `refuseDimmedScreens` rather than by making the link inert, so the hint
+ * still has a pointer to appear over.
  */
 function markRailAvailability(loaded) {
   for (const link of document.querySelectorAll(".rail-item")) {
@@ -144,6 +146,36 @@ function markRailAvailability(loaded) {
     if (loaded) link.removeAttribute("aria-disabled");
     else link.setAttribute("aria-disabled", "true");
   }
+}
+
+/** Refuses a click on a rail item that leads to a screen with nothing to draw.
+ *
+ * A dim item keeps its href, so it is still a link: middle-click, a bookmark or a
+ * keyboard activation would all open a screen that can only say it has no map. The
+ * click is stopped here instead, at the one place every activation passes through.
+ */
+function refuseDimmedScreens() {
+  for (const link of document.querySelectorAll(".rail-item")) {
+    link.addEventListener("click", (event) => {
+      if (link.getAttribute("aria-disabled") === "true") event.preventDefault();
+    });
+  }
+}
+
+/** Says on the pointer that the screen is waiting on something.
+ *
+ * The two heavy jobs run for minutes and disable the control that started them, so the
+ * pointer is the only thing left that can say the click was taken. The flag on the body
+ * covers everywhere the pointer can be; the control that started the wait carries the
+ * same cursor, since that is where the hand already is.
+ */
+let workingControl = null;
+
+function setWorking(working, control = null) {
+  document.body.classList.toggle("is-working", working);
+  if (workingControl) workingControl.classList.remove("is-working");
+  workingControl = working ? control : null;
+  if (workingControl) workingControl.classList.add("is-working");
 }
 
 /** The receipt for what is loaded, drawn above every screen.
@@ -363,6 +395,7 @@ function renderData(root) {
   load.addEventListener("click", async () => {
     load.disabled = true;
     say("", null);
+    setWorking(true, load);
 
     let started;
     try {
@@ -374,6 +407,7 @@ function renderData(root) {
     } catch (error) {
       say(error.message, "error");
       load.disabled = false;
+      setWorking(false);
       return;
     }
 
@@ -402,6 +436,7 @@ function renderData(root) {
       progress.hidden = true;
       progress.replaceChildren();
       load.disabled = false;
+      setWorking(false);
     };
 
     watchJob(started.job, {
@@ -413,6 +448,20 @@ function renderData(root) {
         finish();
         await drawTopbar();
         await check();
+        // The read changes what every other screen can do, so it is said in words where
+        // the action was rather than left to be noticed in the top bar above. The words
+        // are the receipt's own, so the two cannot disagree about what was read.
+        let held;
+        try {
+          held = await get("/api/session");
+        } catch (error) {
+          return;
+        }
+        say(
+          `Read ${held.files} files into a ${held.rows} × ${held.cols} grid: ` +
+            `${held.bands} bands, ${held.axis_start.toFixed(1)} – ${held.axis_end.toFixed(1)} cm⁻¹.`,
+          "ok",
+        );
       },
       onCancelled: () => {
         finish();
@@ -643,12 +692,17 @@ async function renderHeatmap(root) {
   }
 
   // What the screen is showing. Everything drawn is a function of this, so a control
-  // changes one field and calls the redraw that field affects.
-  const state = {
+  // changes one field and calls the redraw that field affects. The view it opens on is
+  // the same view Reset returns to, which is why the two are one function.
+  const defaults = () => ({
     center: 0,
     widthCm: 10,
     pixel: Math.min(47, session.rows * session.cols),
     logScale: false,
+  });
+
+  const state = {
+    ...defaults(),
     intensity: [0, 1],
     frame: null,
   };
@@ -752,12 +806,17 @@ async function renderHeatmap(root) {
   const intensityLow = el("input", { type: "range", class: "vertical", id: "hm-imin" });
   const intensityHigh = el("input", { type: "range", class: "vertical", id: "hm-imax" });
   const scaleButton = el("button", { type: "button", id: "hm-scale", text: "Switch to ln scale" });
+  const resetButton = el("button", { type: "button", id: "hm-reset", text: "Reset view" });
   const pixel = el("input", { type: "number", class: "narrow", id: "hm-pixel", min: 1, step: 1 });
   const pixelValue = el("span", { class: "note" });
 
   // Position and width are separate controls because they are separate questions: the
   // readout beside each is the only place the exact numbers appear.
   const controls = el("div", { class: "card controls" }, [
+    el("div", { class: "panel-head" }, [
+      el("span", { class: "field-label", text: "CONTROLS" }),
+      resetButton,
+    ]),
     el("label", { class: "ctrl" }, [
       el("span", { class: "ctrl-head" }, [
         el("span", { class: "field-label", text: "RAMAN SHIFT" }),
@@ -775,14 +834,20 @@ async function renderHeatmap(root) {
   ]);
 
   // The intensity range is a range rather than a value, and it is what the colour bar
-  // is scaled to, so it stands beside the image rather than under it.
+  // is scaled to, so it stands beside the image rather than under it. The two handles
+  // stand side by side, each with the area it names above it: stacked, the pair is
+  // twice as tall as the map beside it and pushes the rest of the screen off the window.
   const intensityCard = el("div", { class: "card" }, [
     el("div", { class: "field-label", text: "INTENSITY RANGE" }),
     el("div", { class: "vertical-pair" }, [
-      el("span", { class: "note", id: "hm-imax-value" }),
-      intensityHigh,
-      intensityLow,
-      el("span", { class: "note", id: "hm-imin-value" }),
+      el("div", { class: "pair-col" }, [
+        el("span", { class: "note", id: "hm-imax-value" }),
+        intensityHigh,
+      ]),
+      el("div", { class: "pair-col" }, [
+        el("span", { class: "note", id: "hm-imin-value" }),
+        intensityLow,
+      ]),
     ]),
   ]);
 
@@ -814,14 +879,26 @@ async function renderHeatmap(root) {
     el("p", { class: "note", text: "Narrower windows separate peaks that overlap in the full range, and cost nothing to compute." }),
   ]);
 
+  // The pixel card sits with the spectra rather than with the controls: it says whose
+  // spectrum is drawn above it, and it is that panel's own readout.
+  const drawnColumn = el("div", { class: "panel-col" }, [spectrumCard, lnCard, pixelCard]);
+  const steerColumn = el("div", { class: "panel-col" }, [controls, intensityCard, scaleCard]);
+
+  // The cards that explain the screen's rules are read once rather than steered, so they
+  // go under the panels instead of taking a column beside them.
+  const notesRow = el("div", { class: "panel-row cols-notes" }, [
+    el("div", { class: "panel-col" }, [pointerCard]),
+    el("div", { class: "panel-col" }, [windowCard]),
+  ]);
+
   root.append(
     toolbar,
-    el("div", { class: "split" }, [
-      el("div", { class: "split-left" }, [mapCard, spectrumCard, lnCard, controls]),
-      el("div", { class: "split-right" }, [
-        intensityCard, scaleCard, pixelCard, pointerCard, windowCard,
-      ]),
+    el("div", { class: "panel-row cols-map" }, [
+      el("div", { class: "panel-col" }, [mapCard]),
+      drawnColumn,
+      steerColumn,
     ]),
+    notesRow,
   );
 
   // -- drawing ----------------------------------------------------------------
@@ -832,6 +909,13 @@ async function renderHeatmap(root) {
    * every window size. That matters beyond looks: a point on the image is turned back
    * into a pixel number by where it falls in the element, which is only the pixel it is
    * drawn on while the squares stay square.
+   *
+   * The height it may take is measured from the card's own top rather than taken as a
+   * share of the window, because a share chosen without knowing what sits above the map
+   * leaves the room it was given unused on one window and spends more than exists on
+   * another. What is above is the heading, the toolbar and the card's own head, and what
+   * is below is the rules row and the page's padding, so the map fills exactly what is
+   * left of the window.
    */
   const fitMap = () => {
     const frame = state.frame;
@@ -840,9 +924,13 @@ async function renderHeatmap(root) {
     const available = canvas.parentElement.clientWidth;
     if (!available) return;
 
+    const chrome = mapCard.offsetHeight - canvas.offsetHeight;
+    const below = notesRow.offsetHeight + 16 + 24;
+    const room = window.innerHeight - mapCard.getBoundingClientRect().top - chrome - below;
+
     const scale = Math.min(
       available / canvas.width,
-      (window.innerHeight * 0.34) / canvas.height,
+      Math.max(room, 180) / canvas.height,
     );
     canvas.style.width = `${Math.round(canvas.width * scale)}px`;
     canvas.style.height = `${Math.round(canvas.height * scale)}px`;
@@ -1010,9 +1098,14 @@ async function renderHeatmap(root) {
     namePixel(frame.pixel);
   };
 
-  /** Re-reads the map with a pipeline and a range, and shows the job while it runs. */
-  const derive = async () => {
+  /** Re-reads the map with a pipeline and a range, and shows the job while it runs.
+   *
+   * It is wired to the change of any of the three controls, so the one that started it
+   * is read off the event and carries the working cursor for the length of the read.
+   */
+  const derive = async (event) => {
     deriveNote.classList.remove("bad");
+    setWorking(true, event?.target ?? null);
     let started;
     try {
       started = await post("/api/derive", {
@@ -1023,6 +1116,7 @@ async function renderHeatmap(root) {
     } catch (error) {
       deriveNote.textContent = error.message;
       deriveNote.classList.add("bad");
+      setWorking(false);
       return;
     }
 
@@ -1037,17 +1131,20 @@ async function renderHeatmap(root) {
         for (const control of [pipeline, rangeStart, rangeEnd]) control.disabled = false;
         deriveNote.textContent = "";
         state.center = 0;
+        setWorking(false);
         await drawTopbar();
         await refresh();
       },
       onCancelled: () => {
         for (const control of [pipeline, rangeStart, rangeEnd]) control.disabled = false;
         deriveNote.textContent = "cancelled; the cube is as it was";
+        setWorking(false);
       },
       onError: (message) => {
         for (const control of [pipeline, rangeStart, rangeEnd]) control.disabled = false;
         deriveNote.textContent = message;
         deriveNote.classList.add("bad");
+        setWorking(false);
       },
     });
   };
@@ -1055,6 +1152,14 @@ async function renderHeatmap(root) {
   // -- controls ---------------------------------------------------------------
 
   window.addEventListener("resize", fitMap);
+
+  // The map's size is a function of what sits above and below it, so it is fitted again
+  // whenever the screen's layout changes, not only when the window does. The toolbar
+  // above can settle to a different height just after the first fit, and a map sized
+  // against a layout that no longer exists stays at that size until the window is
+  // touched. Re-fitting is idempotent: the room is read from the card's top and the
+  // rules row, neither of which the map's own size moves.
+  new ResizeObserver(fitMap).observe(document.querySelector(".screens"));
 
   shift.addEventListener("input", () => {
     state.center = Number(shift.value);
@@ -1104,6 +1209,15 @@ async function renderHeatmap(root) {
 
     drawReadouts();
     drawBand();
+  });
+
+  // Every value the view is made of, including the intensity range, which `refresh`
+  // sets from the new frame's own limits. Nothing is re-read: the cube is in memory, so
+  // a reset is one more redraw of the same data.
+  resetButton.addEventListener("click", () => {
+    Object.assign(state, defaults());
+    scaleButton.textContent = "Switch to ln scale";
+    refresh();
   });
 
   const setPixel = (value) => {
@@ -1417,9 +1531,13 @@ async function renderUnmix(root) {
     }),
   ]);
 
-  root.append(toolbar, progress, el("div", { class: "split" }, [
-    el("div", { class: "split-left" }, [countCard, reportCard, settingsCard]),
-    el("div", { class: "split-right" }, [spectraCard, mapsCard]),
+  // The panels of a run sit side by side: what is asked for and what the estimator made
+  // of it on the left, the spectra and the abundance maps it produced in the wider
+  // columns. Stacked in one column the maps were the narrowest thing on the screen.
+  root.append(toolbar, progress, el("div", { class: "panel-row cols-unmix" }, [
+    el("div", { class: "panel-col" }, [countCard, settingsCard]),
+    el("div", { class: "panel-col" }, [reportCard, spectraCard]),
+    el("div", { class: "panel-col" }, [mapsCard]),
   ]));
 
   // -- drawing ---------------------------------------------------------------
@@ -1560,6 +1678,7 @@ async function renderUnmix(root) {
     settingsToggle.disabled = running;
     for (const control of [rangeStart, rangeEnd, estimateRadio, fixedRadio]) control.disabled = running;
     for (const control of [minus, countInput, plus]) control.disabled = running || state.estimate;
+    setWorking(running, run);
   };
 
   run.addEventListener("click", async () => {
@@ -1930,14 +2049,14 @@ async function renderPredict(root) {
 
   // The card's own heading is the readout's first line, so the card needs none of its
   // own: a pixel is read as one panel rather than as a heading and a panel under it.
-  const hoverPanel = el("div", { class: "card", id: "pr-hover-card" }, [hoverBody]);
+  const hoverPanel = el("div", { class: "card pr-readout", id: "pr-hover-card" }, [hoverBody]);
 
   // The map is the screen's subject and the controls are a column beside it, which is the
   // way round the other two screens are not: there the reader is looking at a picture
   // they are steering, and here at a picture they are reading a run against.
-  root.append(toolbar, progress, el("div", { class: "split wide-right" }, [
-    el("div", { class: "split-left" }, [refusalCard, runCard, thresholdCard]),
-    el("div", { class: "split-right" }, [mapCard, hoverPanel]),
+  root.append(toolbar, progress, el("div", { class: "panel-row cols-predict" }, [
+    el("div", { class: "panel-col" }, [refusalCard, runCard, thresholdCard]),
+    el("div", { class: "panel-col" }, [mapCard, hoverPanel]),
   ]));
 
   // -- drawing ---------------------------------------------------------------
@@ -2020,6 +2139,7 @@ async function renderPredict(root) {
     runSelect.disabled = running || !catalogue.runs.length;
     for (const control of [runPath, savePath, thresholdSlider]) control.disabled = running;
     save.disabled = running || !state.result;
+    setWorking(running, run);
   };
 
   runSelect.addEventListener("change", drawFacts);
@@ -2167,10 +2287,45 @@ async function renderPredict(root) {
     });
   });
 
+  /** Sizes the map to the room the window has left for it.
+   *
+   * The map is a square picture in a column, so the column's width alone would make it as
+   * tall as the column is wide, and on a wide window that is taller than the window: the
+   * readout under it leaves the screen. The room is measured from the card's own top
+   * rather than taken as a share of the window, because a share chosen without knowing
+   * what sits above the map leaves the room it was given unused on one window and spends
+   * more than exists on another. The width follows the height, so the picture stays
+   * square at every size.
+   */
+  const fitMap = () => {
+    if (!mapCard.isConnected) return;
+
+    const top = mapCard.getBoundingClientRect().top;
+    const style = getComputedStyle(mapCard);
+    const chrome = mapBox.getBoundingClientRect().top - top +
+      parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth);
+    const below = hoverPanel.offsetHeight + 16 + 24;
+    const room = window.innerHeight - top - chrome - below;
+
+    mapImage.style.maxHeight = `${Math.max(room, 180)}px`;
+  };
+
   drawFacts();
   drawMap();
   drawRefusal();
+  fitMap();
+
+  window.addEventListener("resize", fitMap);
+
+  // The map's room is a function of what sits above it, so it is fitted again whenever
+  // the screen's layout changes, not only when the window does. The toolbar above can
+  // settle to a different height just after the first fit, and a map sized against a
+  // layout that no longer exists stays at that size until the window is touched.
+  // Re-fitting is idempotent: the room is read from the card's top and the readout,
+  // neither of which the map's own size moves.
+  new ResizeObserver(fitMap).observe(document.querySelector(".screens"));
 }
 
 drawTopbar();
+refuseDimmedScreens();
 drawScreen(currentScreen());
