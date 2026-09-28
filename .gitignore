@@ -35,8 +35,6 @@ build/
 Thumbs.db
 
 # --- Local Tooling ---
-# Kept on disk but not in the repository: the agent conventions file and the
-# working artefacts the plan/report workflow writes.
 CLAUDE.md
 .lavish/
 
