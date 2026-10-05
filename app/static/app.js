@@ -1298,7 +1298,13 @@ async function renderHeatmap(root) {
     state.frame = frame;
     state.center = frame.index;
 
-    shift.max = Math.max(frame.bands - 1, 0);
+    // The shift slider names a band of the map, so its track is the map's bands, and the
+    // same track at every width. Taking the track from the windowed cube instead would
+    // rescale it whenever the window width changed the number of positions a window
+    // leaves, moving the thumb while the width slider is the one being held. A window
+    // too wide to start on the last bands of the track is clamped by the frame, which
+    // reports the band it settled on rather than the slider claiming one it did not get.
+    shift.max = Math.max(frame.axis.length - 1, 0);
     shift.value = frame.index;
     width.min = frame.window_min;
     width.max = frame.window_max;
