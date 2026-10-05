@@ -2,11 +2,12 @@
 
 Two earlier models, a batch-time data generator, a comparison plot and a
 rolling-window loader were removed from ``src/``, and the interactive command
-line was retired once the browser covered the same three analyses. Nothing
-imported the removed code, but a name can come back by accident (a copy-paste, a
-merge), and a dead function that is silently reachable again is how the same code
-gets maintained twice. These checks read the parsed tree rather than the text, so
-a mention inside a docstring or a comment does not count as a use.
+line and two of the three viewers it called were retired once the browser
+covered the same analyses. Nothing imported the removed code, but a name can
+come back by accident (a copy-paste, a merge), and a dead function that is
+silently reachable again is how the same code gets maintained twice. These
+checks read the parsed tree rather than the text, so a mention inside a docstring
+or a comment does not count as a use.
 """
 
 import ast
@@ -23,14 +24,22 @@ RETIRED = {
     "plot_standardised_comparison": "src/cnn/cnn_preprocessing.py",
     "get_area_under_hsi_cube": "src/data/loader.py",
     # The retired command line's prompt layer. Only the prompts are listed: the
-    # viewers they called are still live under ``src/visualisation/`` and the
-    # browser draws through the same ones.
+    # phase-decomposition viewer it called is still live under
+    # ``src/visualisation/``, and a browser test checks the unmixing against it.
     "prompt_args": "scripts/plot_raman.py",
     "prompt_mode": "scripts/plot_raman.py",
     "prompt_heatmap_args": "scripts/plot_raman.py",
     "prompt_phase_decomp_args": "scripts/plot_raman.py",
     "prompt_run_dir": "scripts/plot_raman.py",
     "prompt_predict_args": "scripts/plot_raman.py",
+    # The two viewers the browser covers itself. Their figures went with the command
+    # line; the windowing the heatmap figure was drawn from, ``query_rolling_auc``, is
+    # still live and is what the Heatmap screen asks for its band.
+    "show_hsi_viewer": "src/visualisation/view_heatmap.py",
+    "pixel_at": "src/visualisation/view_heatmap.py",
+    "_apply_intensity_mask": "src/visualisation/view_heatmap.py",
+    "show_prediction_map": "src/visualisation/view_predict.py",
+    "_hover_annotation": "src/visualisation/view_predict.py",
 }
 
 
