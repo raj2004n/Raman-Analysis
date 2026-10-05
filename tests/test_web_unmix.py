@@ -25,7 +25,7 @@ from app import figures, jobs, session, unmix, worker
 from src.analysis.phase_number_est import MethodEstimate, PhaseEstimate, estimate_phase_number
 from src.config import EstimatorConfig, NmfConfig
 from src.data.loader import get_cumulative_hsi_cube, get_raw_hsi_cube
-from src.visualisation import view_phase_decomp
+from src.visualisation import view_unmixing
 from tests import synthetic
 
 pytestmark = pytest.mark.usefixtures("isolated_artifacts")
@@ -134,11 +134,11 @@ def test_the_decomposition_is_the_viewers_own(grid_dir, raw_cube, monkeypatch):
         seen.setdefault("maps", []).append(np.asarray(image))
         return kwargs.get("ax")
 
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", record_spectra)
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "image", record_image)
-    monkeypatch.setattr(view_phase_decomp.plt, "show", lambda: None)
+    monkeypatch.setattr(view_unmixing.rp.plot, "spectra", record_spectra)
+    monkeypatch.setattr(view_unmixing.rp.plot, "image", record_image)
+    monkeypatch.setattr(view_unmixing.plt, "show", lambda: None)
 
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, PHASES)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, PHASES)
     maps, phases = unmix.decomposition(get_raw_hsi_cube(str(grid_dir), synthetic.ROWS, synthetic.COLS), PHASES)
 
     assert len(seen["maps"]) == PHASES

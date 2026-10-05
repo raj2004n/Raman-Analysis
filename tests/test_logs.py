@@ -102,7 +102,7 @@ def test_the_format_is_the_message_alone(logger, monkeypatch):
     captured = io.StringIO()
     monkeypatch.setattr("sys.stdout", captured)
 
-    logging.getLogger(f"{logs.LOGGER_NAME}.visualisation.view_heatmap").info("Estimated %s phases", 3)
+    logging.getLogger(f"{logs.LOGGER_NAME}.analysis.rolling_auc").info("Estimated %s phases", 3)
 
     assert captured.getvalue() == "Estimated 3 phases\n"
 

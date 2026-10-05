@@ -5,11 +5,12 @@ constantly, so they are sent as arrays and drawn in the browser rather than rend
 as a picture. A slider move is then a message of a few kilobytes instead of a new
 figure, and the band follows the slider without a pause.
 
-The windowing is not reimplemented here. ``query_rolling_auc`` is the function the
-matplotlib viewer has always used: it turns a width in cm⁻¹ into a number of bands
-with a floor of two and a cap the caller passes, and each band of the result is one
-subtraction between two bands of the cumulative cube. Using it means the browser and
-the viewer agree on what a window of 10 cm⁻¹ is, down to which bands it spans.
+The windowing is not reimplemented here. ``query_rolling_auc`` is the one place it is
+written down: it turns a width in cm⁻¹ into a number of bands with a floor of two and
+a cap the caller passes, and each band of the result is one subtraction between two
+bands of the cumulative cube. Keeping the screen on that function is what makes a
+window of 10 cm⁻¹ mean the same thing wherever it is measured, down to which bands it
+spans.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import logging
 
 import numpy as np
 
-from src.visualisation.view_heatmap import query_rolling_auc
+from src.analysis.rolling_auc import query_rolling_auc
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-"""The phase decomposition viewer's four jobs: forward its settings, know what "estimate it"
+"""The unmixing viewer's four jobs: forward its settings, know what "estimate it"
 means, stop when there is no count to decompose with, and give the plot its own colours.
 
 The settings used to be an inline dictionary in the viewer, which meant a caller could
@@ -19,7 +19,7 @@ import pytest
 from src import logs
 from src.analysis.phase_number_est import MethodEstimate, PhaseEstimate
 from src.config import NmfConfig
-from src.visualisation import view_phase_decomp
+from src.visualisation import view_unmixing
 
 
 class _Recorder:
@@ -42,17 +42,17 @@ def viewer(monkeypatch):
         recorded.update(kwargs)
         return _Recorder(**kwargs)
 
-    monkeypatch.setattr(view_phase_decomp.rp.analysis.decompose, "NMF", fake_nmf)
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", lambda *a, **k: None)
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "image", lambda *a, **k: None)
-    monkeypatch.setattr(view_phase_decomp.plt, "show", lambda: None)
-    monkeypatch.setattr(view_phase_decomp, "estimate_phase_number", lambda cube: PhaseEstimate(3, "high", ()))
+    monkeypatch.setattr(view_unmixing.rp.analysis.decompose, "NMF", fake_nmf)
+    monkeypatch.setattr(view_unmixing.rp.plot, "spectra", lambda *a, **k: None)
+    monkeypatch.setattr(view_unmixing.rp.plot, "image", lambda *a, **k: None)
+    monkeypatch.setattr(view_unmixing.plt, "show", lambda: None)
+    monkeypatch.setattr(view_unmixing, "estimate_phase_number", lambda cube: PhaseEstimate(3, "high", ()))
     return recorded
 
 
 def test_the_viewer_sends_the_default_settings(raw_cube, viewer):
     """With no config given, the decomposition gets the defaults for every setting."""
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, 3)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, 3)
 
     assert viewer == NmfConfig().as_kwargs(3)
 
@@ -61,7 +61,7 @@ def test_the_viewer_sends_the_settings_it_was_given(raw_cube, viewer):
     """A caller's config reaches the decomposition, including a seed and an iteration cap."""
     config = replace(NmfConfig(), max_iter=25, random_state=7, solver="mu")
 
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, 2, nmf_config=config)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, 2, nmf_config=config)
 
     assert viewer["n_components"] == 2
     assert viewer["max_iter"] == 25
@@ -71,14 +71,14 @@ def test_the_viewer_sends_the_settings_it_was_given(raw_cube, viewer):
 
 def test_none_means_estimate_the_count(raw_cube, viewer):
     """The new spelling of "I do not know how many phases there are"."""
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, None)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, None)
 
     assert viewer["n_components"] == 3, "the estimate is what the decomposition must be given"
 
 
 def test_minus_one_is_still_the_same_request(raw_cube, viewer):
     """The command line prompt offers -1 for "estimate it" and has for long enough that it stays."""
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, -1)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, -1)
 
     assert viewer["n_components"] == 3
 
@@ -88,9 +88,9 @@ def test_a_given_count_is_never_estimated(raw_cube, viewer, monkeypatch):
     def explosion(cube):
         raise AssertionError("the estimator was called for a cube whose count was given")
 
-    monkeypatch.setattr(view_phase_decomp, "estimate_phase_number", explosion)
+    monkeypatch.setattr(view_unmixing, "estimate_phase_number", explosion)
 
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, 4)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, 4)
 
     assert viewer["n_components"] == 4
 
@@ -106,7 +106,7 @@ def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewe
     log. That it reaches stdout as well is covered where the handler is set up.
     """
     monkeypatch.setattr(
-        view_phase_decomp, "estimate_phase_number",
+        view_unmixing, "estimate_phase_number",
         lambda cube: PhaseEstimate(
             None, "undetermined",
             (MethodEstimate("PCA 80%", None, "the estimate of 17 is above the limit of 10"),),
@@ -114,7 +114,7 @@ def test_an_undetermined_estimate_stops_before_the_decomposition(raw_cube, viewe
     )
 
     with caplog.at_level(logging.INFO, logger=logs.LOGGER_NAME):
-        view_phase_decomp.show_spectra_ext_viewer(raw_cube, None)
+        view_unmixing.show_spectra_ext_viewer(raw_cube, None)
 
     assert viewer == {}, "the decomposition was built without a count to give it"
     assert "Nothing to unmix without a phase count." in caplog.text
@@ -134,8 +134,8 @@ def test_the_colours_are_given_at_the_call(raw_cube, viewer, monkeypatch):
         seen.update(kwargs)
         return None
 
-    monkeypatch.setattr(view_phase_decomp.rp.plot, "spectra", fake_spectra)
-    view_phase_decomp.show_spectra_ext_viewer(raw_cube, 3)
+    monkeypatch.setattr(view_unmixing.rp.plot, "spectra", fake_spectra)
+    view_unmixing.show_spectra_ext_viewer(raw_cube, 3)
 
     assert "color" in seen, "ramanspy would otherwise compute a default through a removed API"
     assert len(seen["color"]) == 3, "a colour for each of the three phases"

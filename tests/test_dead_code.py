@@ -24,8 +24,9 @@ RETIRED = {
     "plot_standardised_comparison": "src/cnn/cnn_preprocessing.py",
     "get_area_under_hsi_cube": "src/data/loader.py",
     # The retired command line's prompt layer. Only the prompts are listed: the
-    # phase-decomposition viewer it called is still live under
-    # ``src/visualisation/``, and a browser test checks the unmixing against it.
+    # phase-decomposition viewer it called is still live as
+    # ``src/visualisation/view_unmixing.py``, and a browser test checks the unmixing
+    # against it.
     "prompt_args": "scripts/plot_raman.py",
     "prompt_mode": "scripts/plot_raman.py",
     "prompt_heatmap_args": "scripts/plot_raman.py",
@@ -34,7 +35,10 @@ RETIRED = {
     "prompt_predict_args": "scripts/plot_raman.py",
     # The two viewers the browser covers itself. Their figures went with the command
     # line; the windowing the heatmap figure was drawn from, ``query_rolling_auc``, is
-    # still live and is what the Heatmap screen asks for its band.
+    # still live and is what the Heatmap screen asks for its band. Each path below is
+    # the module a name was taken out of, and its last segment is the name the copy kept
+    # in ``legacy/`` has, so a module that has since moved keeps the path it was retired
+    # from rather than the one it lives at now.
     "show_hsi_viewer": "src/visualisation/view_heatmap.py",
     "pixel_at": "src/visualisation/view_heatmap.py",
     "_apply_intensity_mask": "src/visualisation/view_heatmap.py",

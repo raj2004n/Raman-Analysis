@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 from app import frames, jobs, session, worker
-from src.visualisation.view_heatmap import query_rolling_auc
+from src.analysis.rolling_auc import query_rolling_auc
 from tests import synthetic
 
 pytestmark = pytest.mark.usefixtures("isolated_artifacts")
