@@ -245,7 +245,7 @@ function renderData(root) {
     type: "text",
     class: "wide",
     id: "data-directory",
-    placeholder: "~/Code/Data_SH/SB008",
+    placeholder: "Browse, or type the map directory",
     spellcheck: "false",
   });
   const browse = el("button", { type: "button", id: "data-browse", text: "Browse…" });
@@ -296,11 +296,36 @@ function renderData(root) {
     }),
   ]);
 
-  root.append(el("div", { class: "grid-2" }, [form, el("div", { class: "card" }, [
-    el("div", { class: "field-label", text: "GRID PREVIEW" }),
-    preview,
-    el("p", { class: "note", id: "data-preview-note", text: "No directory yet." }),
-  ])]), why);
+  // The saved maps come first: the list is the shortest way back to a map that has been
+  // opened before, and the form under it is for one that has not. A row's Load reads the
+  // map, because an entry keeps the grid it was read with. The form is filled in as well,
+  // so it names the map that is on screen rather than the one before it.
+  const saved = savedMapsPanel(async (entry, root) => {
+    directory.value = `${root}/${entry.path}`;
+    picker.hidden = true;
+
+    // An entry saved before the grid was kept cannot be read on its own, and the form is
+    // where the size is set, so it is filled in and the reason is said there.
+    if (!(entry.rows > 0 && entry.cols > 0)) {
+      await check();
+      say("That map was saved before its grid was kept. Set the grid, then press Load map.", null);
+      return;
+    }
+
+    rows.value = entry.rows;
+    cols.value = entry.cols;
+    await startLoad(directory.value.trim(), entry.rows, entry.cols);
+  });
+
+  root.append(
+    saved.element,
+    el("div", { class: "grid-2" }, [form, el("div", { class: "card" }, [
+      el("div", { class: "field-label", text: "GRID PREVIEW" }),
+      preview,
+      el("p", { class: "note", id: "data-preview-note", text: "No directory yet." }),
+    ])]),
+    why,
+  );
 
   // -- the live check ---------------------------------------------------------
 
@@ -382,8 +407,10 @@ function renderData(root) {
       picker.hidden = true;
       return;
     }
-    const start = directory.value.trim() || "~";
-    await showPicker(picker, start, (chosen) => {
+    // The picker opens at the map root rather than at whatever the field holds: it may
+    // not walk above the root, and the field can still hold a path from before there was
+    // one. The way back up stops at the root, so the walk is always inside it.
+    await showPicker(picker, "", (chosen) => {
       directory.value = chosen;
       picker.hidden = true;
       check();
@@ -392,18 +419,17 @@ function renderData(root) {
 
   // -- Load -------------------------------------------------------------------
 
-  load.addEventListener("click", async () => {
+  /* Reads a map and makes it the session. The form's own button and a saved row's Load both
+   * come through here, so a row reads a map by the same route the form does rather than by a
+   * second one that would have to be kept in step with it. */
+  const startLoad = async (path, mapRows, mapCols) => {
     load.disabled = true;
     say("", null);
     setWorking(true, load);
 
     let started;
     try {
-      started = await post("/api/map", {
-        path: directory.value.trim(),
-        rows: Number(rows.value),
-        cols: Number(cols.value),
-      });
+      started = await post("/api/map", { path, rows: mapRows, cols: mapCols });
     } catch (error) {
       say(error.message, "error");
       load.disabled = false;
@@ -447,6 +473,8 @@ function renderData(root) {
         label.textContent = "Read.";
         finish();
         await drawTopbar();
+        // The read has just been recorded, so the list above shows the map it is on.
+        await saved.refresh();
         await check();
         // The read changes what every other screen can do, so it is said in words where
         // the action was rather than left to be noticed in the top bar above. The words
@@ -472,7 +500,11 @@ function renderData(root) {
         say(message, "error");
       },
     });
-  });
+  };
+
+  load.addEventListener("click", () =>
+    startLoad(directory.value.trim(), Number(rows.value), Number(cols.value)),
+  );
 
   // The form starts from the map already in hand, and is checked once on arrival, so a
   // directory typed earlier is reported before anything is clicked. A blank field beside
@@ -556,6 +588,189 @@ async function showPicker(container, start, onChoose) {
     ]),
     el("div", { class: "picker-list" }, children),
   );
+}
+
+// A row's menu closes when a click lands outside it, or on Escape. One pair of listeners for
+// the page rather than one per row: the rows are thrown away and rebuilt on every refresh of
+// the list, so a listener per row would leave one behind on each refresh.
+document.addEventListener("click", (event) => {
+  if (event.target instanceof Element && event.target.closest(".saved-more, .saved-menu")) return;
+  closeSavedMenus();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeSavedMenus();
+});
+
+/** Closes every open saved-map menu on the page. */
+function closeSavedMenus() {
+  for (const menu of document.querySelectorAll(".saved-menu:not([hidden])")) menu.hidden = true;
+  for (const more of document.querySelectorAll('.saved-more[aria-expanded="true"]')) {
+    more.setAttribute("aria-expanded", "false");
+  }
+}
+
+/** The maps that have been opened before, and what can be done to each.
+ *
+ * The list is the app's own record and not a copy of any map: an entry is a name, a path
+ * relative to the map root, and the grid the map was read with, and the directory itself is
+ * the map. So renaming a folder moves it and deleting removes it, which is why delete asks
+ * first. A row carries the one thing that is done often, which is loading the map, and
+ * keeps the four that are not behind a menu.
+ *
+ * Returns the card and a way to read the list again, since a load that has just finished is
+ * a map the list has just gained.
+ */
+function savedMapsPanel(onLoad) {
+  const list = el("div", { class: "saved-list" });
+  const message = el("p", { class: "note saved-message", hidden: "" });
+  const element = el("div", { class: "card", id: "saved-maps" }, [
+    el("div", { class: "field-label", text: "SAVED MAPS" }),
+    list,
+    el("p", {
+      class: "note",
+      text:
+        "A saved map is a name and a path, not a copy of the map itself. The map stays " +
+        "where it is, so renaming the folder moves it and deleting removes it, and only " +
+        "maps opened from inside the map directory are saved.",
+    }),
+    message,
+  ]);
+
+  const say = (text, bad) => {
+    message.hidden = !text;
+    message.textContent = text || "";
+    message.classList.toggle("warn", Boolean(bad));
+  };
+
+  /** Sends a change and redraws from the answer, so what is on screen is what is on disk. */
+  const change = async (route, body) => {
+    try {
+      await post(route, body);
+    } catch (error) {
+      say(error.message, true);
+      return;
+    }
+    say("");
+    await refresh();
+  };
+
+  const draw = (answer) => {
+    const entries = answer.entries || [];
+    if (!entries.length) {
+      list.replaceChildren(el("p", { class: "note", text: "No maps yet. One is saved when you load it." }));
+      return;
+    }
+    list.replaceChildren(...entries.map((entry) => savedRow(entry, answer.root, change, onLoad)));
+  };
+
+  const refresh = async () => {
+    let answer;
+    try {
+      answer = await get("/api/maps");
+    } catch (error) {
+      list.replaceChildren(el("p", { class: "note", text: error.message }));
+      return;
+    }
+    draw(answer);
+  };
+
+  refresh();
+  return { element, refresh };
+}
+
+/** One saved map: what it is called, where it is, and what can be done to it.
+ *
+ * Load is the row's own button, because reading a map is what a saved map is for and the
+ * grid it needs is on the entry. The other four are in the menu: two of them reach the
+ * disk, and the whole path is worth the room only once it has been asked for.
+ */
+function savedRow(entry, root, change, onLoad) {
+  const grid = entry.rows > 0 && entry.cols > 0 ? `${entry.rows} × ${entry.cols}` : null;
+
+  // The path an entry stores is relative, which is what keeps it true when the maps move
+  // with the root. The whole path is the root and that, and what the app can see is all it
+  // can print, so the note says which folder that is without claiming to know where the
+  // root is on the machine.
+  const full = el("div", { class: "saved-full", hidden: "" }, [
+    el("div", { class: "mono", text: `${root}/${entry.path}` }),
+    el("p", {
+      class: "note",
+      text:
+        "This is the path the app reads. In the container that is /data; running here " +
+        "it is this project's data/ folder.",
+    }),
+  ]);
+
+  const load = el("button", { type: "button", class: "primary", text: "Load" });
+  load.title = grid
+    ? `Read ${entry.path} as a ${grid} grid.`
+    : "This map was saved before its grid was kept, so the size has to be set first.";
+  load.addEventListener("click", () => onLoad(entry, root));
+
+  const whole = el("button", { type: "button", text: "Show the whole path" });
+  whole.addEventListener("click", () => {
+    full.hidden = !full.hidden;
+    whole.textContent = full.hidden ? "Show the whole path" : "Hide the whole path";
+    closeSavedMenus();
+  });
+
+  const label = el("button", { type: "button", text: "Rename label" });
+  label.addEventListener("click", () => {
+    closeSavedMenus();
+    const wanted = window.prompt("What should this map be called?", entry.label);
+    if (wanted === null || !wanted.trim()) return;
+    change("/api/maps/label", { path: entry.path, label: wanted.trim() });
+  });
+
+  const folder = el("button", { type: "button", text: "Rename folder" });
+  folder.addEventListener("click", () => {
+    closeSavedMenus();
+    const wanted = window.prompt("What should the folder be called?", entry.path.split("/").pop());
+    if (wanted === null || !wanted.trim()) return;
+    change("/api/maps/path", { path: entry.path, name: wanted.trim() });
+  });
+
+  const remove = el("button", { type: "button", class: "danger", text: "Delete" });
+  remove.addEventListener("click", () => {
+    closeSavedMenus();
+    const sure = window.confirm(
+      `Delete the saved map "${entry.label}" and the folder it names?\n\n` +
+        `${entry.path}\n\nThis removes the folder from disk and cannot be undone.`,
+    );
+    if (sure) change("/api/maps/delete", { path: entry.path });
+  });
+
+  const menu = el("div", { class: "saved-menu", hidden: "" }, [whole, label, folder, remove]);
+
+  const more = el("button", {
+    type: "button",
+    class: "saved-more",
+    text: "⋯",
+    "aria-haspopup": "true",
+    "aria-expanded": "false",
+    "aria-label": `What else can be done to ${entry.label}`,
+  });
+  more.addEventListener("click", () => {
+    const wasShut = menu.hidden;
+    closeSavedMenus();
+    if (!wasShut) return;
+    menu.hidden = false;
+    more.setAttribute("aria-expanded", "true");
+    // The list is capped and scrolls, so a menu opened on one of the last rows would
+    // otherwise be cut off below it.
+    menu.scrollIntoView({ block: "nearest" });
+  });
+
+  return el("div", { class: "saved-row" }, [
+    el("div", { class: "saved-main" }, [
+      el("span", { class: "saved-label", text: entry.label }),
+      el("span", { class: "saved-path mono", text: entry.path }),
+      full,
+    ]),
+    el("div", { class: "saved-actions" }, [load, more]),
+    menu,
+  ]);
 }
 
 // ---------------------------------------------------------------- the heatmap

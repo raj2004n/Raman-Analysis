@@ -23,8 +23,9 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from src.data.grid import RamanGrid
+from src.paths import DATA_DIR_ENV, data_root
 
-from app import figures, frames, jobs, predictions, session, unmix, worker
+from app import figures, frames, jobs, predictions, saved_maps, session, unmix, worker
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,25 @@ FIGURE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 
 
 def _publish(job: jobs.Job) -> None:
-    """Makes a finished load job's read the current session.
+    """Makes a finished load job's read the current session, and remembers it.
 
     Called from the job's watcher thread once the child has finished, so a load that
     completes while nobody is looking still becomes the map the next request sees.
+
+    A map read from outside the map root is opened but not saved, because the list names
+    its maps by a path relative to the root and there is no such path for it.
+
+    The record carries the grid the map was read with, and the entry keeps it: the shape of
+    a directory cannot be worked out from the files in it, so a map opened from the list
+    would otherwise have to have its size typed in again.
     """
-    session.replace_with(job.directory / worker.ARRAYS_DIRNAME)
+    record = session.replace_with(job.directory / worker.ARRAYS_DIRNAME)
+    saved_maps.remember(
+        record.get("label", ""),
+        record.get("directory", ""),
+        record.get("rows"),
+        record.get("cols"),
+    )
 
 
 def _grid_report(path: str, rows: int, cols: int) -> dict:
@@ -477,15 +491,121 @@ def read_session() -> dict:
     return {"loaded": True, **record}
 
 
+@router.get("/maps")
+def list_saved_maps() -> dict:
+    """The maps the interface has opened before, and the root their paths are relative to.
+
+    The root travels with the list because the screen shows it: the full path of a saved
+    map is the root and the entry's own path, and the paths in the file mean nothing
+    without it. The list is answered whether or not the root is there, since a list that
+    can still be read is worth showing when its maps have moved away.
+    """
+    return {"root": str(data_root()), "entries": saved_maps.entries()}
+
+
+def _saved_path(request: dict) -> str:
+    """The path of the saved map a request names.
+
+    The screen sends back the path it was given, which is the list's own relative form,
+    so nothing is resolved here: the path is a key into the list, and a change is refused
+    when no entry has it.
+
+    Raises:
+        HTTPException: The request names no map.
+    """
+    stored = str(request.get("path") or "").strip()
+    if not stored:
+        raise HTTPException(status_code=400, detail="No saved map was named.")
+    return stored
+
+
+def _saved_change(change, *args) -> dict:
+    """Runs a change to the saved list and answers with the list as it now stands.
+
+    Every change answers the whole list, so the screen redraws from one response rather
+    than asking again for what it has just changed.
+
+    Raises:
+        HTTPException: The path names no saved map, or the directory it names is gone
+            (404); or the change was refused, which is a path climbed out of the root or a
+            name that is not a folder name (400).
+    """
+    try:
+        entries = change(*args)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return {"root": str(data_root()), "entries": entries}
+
+
+@router.post("/maps/label")
+def rename_saved_label(request: dict = Body(...)) -> dict:
+    """Renames what a saved map is called, leaving the directory where it is."""
+    return _saved_change(
+        saved_maps.rename_label, _saved_path(request), str(request.get("label") or "")
+    )
+
+
+@router.post("/maps/path")
+def rename_saved_path(request: dict = Body(...)) -> dict:
+    """Renames the directory a saved map names, moving it inside the map root."""
+    return _saved_change(
+        saved_maps.rename_path, _saved_path(request), str(request.get("name") or "")
+    )
+
+
+@router.post("/maps/delete")
+def delete_saved_map(request: dict = Body(...)) -> dict:
+    """Removes a saved map: the entry, and the directory it names.
+
+    The confirmation is the screen's, not a field here. By the time a request is sent the
+    answer is already the user's, and a flag carried alongside it would only be a second
+    copy of that decision to keep in step with the screen.
+    """
+    return _saved_change(saved_maps.delete, _saved_path(request))
+
+
+def _map_root() -> Path:
+    """The directory the maps are opened from, which the picker may not leave.
+
+    Refused rather than created when it is missing: the directory holds the user's own
+    maps, and under a bind mount Docker would create a missing one owned by root.
+
+    Raises:
+        HTTPException: The root is not there.
+    """
+    root = data_root()
+    if not root.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"The map directory {root} is not there. Create it, or name another "
+                f"with {DATA_DIR_ENV}."
+            ),
+        )
+    return root
+
+
 @router.get("/directories")
-def directories(path: str = Query("~")) -> dict:
+def directories(path: str = Query("")) -> dict:
     """Lists the directories inside one directory, for the Data screen's picker.
 
     A browser cannot name a path on the machine the server runs on, so the walk is
     done here. Only directories are listed, because a map is a directory and no file
     can be loaded as one, and dot directories are left out since a map is not hidden.
+
+    The walk is confined to the map root, and a blank path is the root itself. Every map
+    the picker can offer then has a path relative to the root, which is what lets a saved
+    map be renamed or deleted without reaching anything outside the user's own maps.
     """
-    directory = Path(path).expanduser()
+    root = _map_root()
+    directory = (root / path.strip()).resolve() if path.strip() else root
+
+    if directory != root and root not in directory.parents:
+        raise HTTPException(
+            status_code=403, detail=f"{directory} is outside the map directory {root}."
+        )
     if not directory.is_dir():
         raise HTTPException(status_code=404, detail=f"{directory} is not a directory.")
 
@@ -499,7 +619,8 @@ def directories(path: str = Query("~")) -> dict:
 
     return {
         "path": str(directory),
-        "parent": str(directory.parent) if directory.parent != directory else None,
+        # Nothing above the root, so the picker's way back up stops there.
+        "parent": str(directory.parent) if directory != root else None,
         "directories": entries,
     }
 

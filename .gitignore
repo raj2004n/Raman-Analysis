@@ -16,6 +16,11 @@ artifacts/
 # --- Outputs (generated plots and figures) ---
 outputs/
 
+# --- Maps (the user's own data) ---
+# The directory the interface opens maps from, and the one the compose file bind
+# mounts at /data. It holds the user's spectra, so it is not part of the repository.
+data/
+
 # --- Logs & Checkpoints ---
 logs/
 *.ckpt

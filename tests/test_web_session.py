@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 
 from app import jobs, session, worker
+from src import paths
 from tests import synthetic
 
 pytestmark = pytest.mark.usefixtures("isolated_artifacts")
@@ -92,25 +93,75 @@ def test_the_grid_check_names_a_directory_that_holds_no_numbered_file(client, tm
     assert "No numbered .txt files found" in report["message"]
 
 
-def test_the_picker_walks_directories_and_offers_only_those(client, tmp_path):
-    """It lists directories, because a map is a directory and a file is not one."""
+def test_the_picker_walks_directories_and_offers_only_those(client, tmp_path, monkeypatch):
+    """It lists directories, because a map is a directory and a file is not one.
+
+    The walk begins at the map root and may not leave it, so the root is the one
+    directory with nothing above it to climb to.
+    """
     root = tmp_path / "maps"
     (root / "SB008").mkdir(parents=True)
     (root / "SB009").mkdir()
     (root / "notes.txt").write_text("not a map")
     (root / ".hidden").mkdir()
+    monkeypatch.setenv(paths.DATA_DIR_ENV, str(root))
 
-    listing = client.get("/api/directories", params={"path": str(root)}).json()
+    listing = client.get("/api/directories").json()
 
     assert listing["directories"] == ["SB008", "SB009"]
-    assert listing["path"] == str(root)
-    assert listing["parent"] == str(root.parent)
+    assert listing["path"] == str(root.resolve())
+    assert listing["parent"] is None
 
 
-def test_the_picker_refuses_a_path_that_is_not_a_directory(client, tmp_path):
+def test_the_picker_walks_down_and_back_up_to_the_root(client, tmp_path, monkeypatch):
+    """Below the root the way up is offered, and it leads back into the root."""
+    root = tmp_path / "maps"
+    (root / "SB008").mkdir(parents=True)
+    monkeypatch.setenv(paths.DATA_DIR_ENV, str(root))
+
+    inside = client.get("/api/directories", params={"path": "SB008"}).json()
+
+    assert inside["path"] == str((root / "SB008").resolve())
+    assert inside["parent"] == str(root.resolve())
+
+
+def test_the_picker_refuses_a_path_outside_the_map_root(client, tmp_path, monkeypatch):
+    """A walk that left the root would offer maps the saved list cannot name.
+
+    Every entry stores a path relative to the root, so a map from outside it could not
+    be saved, renamed or deleted. The picker is the door that is kept shut.
+    """
+    root = tmp_path / "maps"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    monkeypatch.setenv(paths.DATA_DIR_ENV, str(root))
+
+    response = client.get("/api/directories", params={"path": str(outside)})
+
+    assert response.status_code == 403
+    assert str(outside) in response.json()["detail"]
+
+
+def test_the_picker_names_the_root_that_is_not_there(client, tmp_path, monkeypatch):
+    """The map directory is the user's own, so a missing one is reported rather than made."""
+    missing = tmp_path / "not-built-yet"
+    monkeypatch.setenv(paths.DATA_DIR_ENV, str(missing))
+
+    response = client.get("/api/directories")
+
+    assert response.status_code == 404
+    assert str(missing) in response.json()["detail"]
+    assert not missing.exists()
+
+
+def test_the_picker_refuses_a_path_that_is_not_a_directory(client, tmp_path, monkeypatch):
     """A file is not a place to walk from, and the message says which one it was."""
-    file = tmp_path / "notes.txt"
+    root = tmp_path / "maps"
+    root.mkdir()
+    file = root / "notes.txt"
     file.write_text("not a directory")
+    monkeypatch.setenv(paths.DATA_DIR_ENV, str(root))
 
     response = client.get("/api/directories", params={"path": str(file)})
 
