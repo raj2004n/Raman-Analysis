@@ -40,7 +40,11 @@ build/
 Thumbs.db
 
 # --- Local Tooling ---
+# The project instructions and the agent scaffolding around them are written for
+# this machine rather than for the pipeline. A vendored skill also goes stale
+# against the CLI that serves its current version.
 CLAUDE.md
+.claude/
 .lavish/
 
 # --- Retired code ---
